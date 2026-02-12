@@ -10,13 +10,21 @@
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "prepare": "husky"
+    "prepare": "husky",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@nuxt/eslint": "1.15.1",
     "@nuxt/icon": "2.2.1",
     "@tailwindcss/vite": "^4.1.18",
+    "bcrypt": "^6.0.0",
+    "drizzle-orm": "^0.45.1",
+    "jose": "^6.1.3",
     "nuxt": "^4.3.1",
+    "postgres": "^3.4.8",
     "tailwindcss": "^4.1.18",
     "vue": "^3.5.28",
     "vue-router": "^4.6.4"
@@ -24,13 +32,18 @@
   "devDependencies": {
     "@antfu/eslint-config": "^7.4.3",
     "@iconify-json/tabler": "^1.2.26",
+    "@types/bcrypt": "^6.0.0",
     "daisyui": "^5.5.18",
+    "drizzle-kit": "^0.31.9",
     "eslint": "^10.0.0",
     "eslint-plugin-format": "^1.4.0",
     "eslint-plugin-n": "^17.23.2",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
     "vite": "^7.3.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["bcrypt", "esbuild", "@parcel/watcher", "unrs-resolver"]
   },
   "lint-staged": {
     "*": "pnpm lint"
