@@ -16,4 +16,8 @@ export default defineNuxtConfig({
       tailwindcss() as any,
     ],
   },
+  runtimeConfig: {
+    databaseUrl: "",
+    jwtSecret: "",
+  },
 });
