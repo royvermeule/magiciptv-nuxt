@@ -4,7 +4,8 @@
       "Bash(gh search:*)",
       "Bash(gh api:*)",
       "WebFetch(domain:www.npmjs.com)",
-      "Bash(pnpm info:*)"
+      "Bash(pnpm info:*)",
+      "Bash(pnpm add:*)"
     ]
   }
 }
