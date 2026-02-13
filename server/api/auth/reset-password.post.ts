@@ -2,21 +2,19 @@ import { resetTokens, users } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ token: string; password: string }>(event);
+  const body = await readBody(event);
+  const result = resetPasswordSchema.safeParse(body);
 
-  if (!body.token || !body.password) {
-    throw createError({ statusCode: 400, statusMessage: "Token and password are required" });
+  if (!result.success) {
+    throw createError({ statusCode: 400, statusMessage: result.error.issues[0]?.message });
   }
 
-  if (body.password.length < 8) {
-    throw createError({ statusCode: 400, statusMessage: "Password must be at least 8 characters" });
-  }
-
+  const { token, password } = result.data;
   const db = useDb();
 
   const [storedToken] = await db.select()
     .from(resetTokens)
-    .where(eq(resetTokens.token, body.token))
+    .where(eq(resetTokens.token, token))
     .limit(1);
 
   if (!storedToken) {
@@ -28,7 +26,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: "Reset token has expired" });
   }
 
-  const hashedPassword = await hashPassword(body.password);
+  const hashedPassword = await hashPassword(password);
 
   await db.update(users)
     .set({ password: hashedPassword })

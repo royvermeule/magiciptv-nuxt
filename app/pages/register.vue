@@ -16,19 +16,20 @@ async function handleSubmit() {
   error.value = "";
   success.value = "";
 
-  if (password.value !== confirmPassword.value) {
-    error.value = "Passwords do not match";
-    return;
-  }
+  const validation = registerFormSchema.safeParse({
+    email: email.value,
+    password: password.value,
+    confirmPassword: confirmPassword.value,
+  });
 
-  if (password.value.length < 8) {
-    error.value = "Password must be at least 8 characters";
+  if (!validation.success) {
+    error.value = validation.error.issues[0].message;
     return;
   }
 
   loading.value = true;
   try {
-    const result = await register(email.value, password.value);
+    const result = await register(validation.data.email, validation.data.password);
     success.value = result.message;
   }
   catch (e: unknown) {

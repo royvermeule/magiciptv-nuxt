@@ -2,17 +2,19 @@ import { resetTokens, users } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ email: string }>(event);
+  const body = await readBody(event);
+  const result = forgotPasswordSchema.safeParse(body);
 
-  if (!body.email) {
-    throw createError({ statusCode: 400, statusMessage: "Email is required" });
+  if (!result.success) {
+    throw createError({ statusCode: 400, statusMessage: result.error.issues[0].message });
   }
 
+  const { email } = result.data;
   const db = useDb();
 
   const [user] = await db.select({ id: users.id })
     .from(users)
-    .where(eq(users.email, body.email.toLowerCase()))
+    .where(eq(users.email, email.toLowerCase()))
     .limit(1);
 
   // Always return success to prevent user enumeration
@@ -30,7 +32,7 @@ export default defineEventHandler(async (event) => {
     const resetLink = `${appUrl}/reset-password?token=${token}`;
 
     await sendMail(
-      body.email.toLowerCase(),
+      email.toLowerCase(),
       "Reset your MagicIPTV password",
       `<h1>Password Reset</h1>
       <p>Click the link below to reset your password:</p>
