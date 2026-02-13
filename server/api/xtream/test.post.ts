@@ -1,3 +1,4 @@
+import { testXtreamConnection } from "~~/server/utils/xtream";
 import { xtreamTestSchema } from "~~/shared/utils/validators";
 
 export default defineEventHandler(async (event) => {
@@ -20,24 +21,6 @@ export default defineEventHandler(async (event) => {
   }
 
   const { xtreamUsername, xtreamPassword, xtreamUrl } = result.data;
-  try {
-    const response = await $fetch(`${xtreamUrl}/player_api.php`, {
-      params: {
-        username: xtreamUsername,
-        password: xtreamPassword,
-      },
-    });
-
-    if (!response || typeof response !== "object" || !("user_info" in response)) {
-      throw createError({ statusCode: 400, statusMessage: "Invalid response from xtream server" });
-    }
-
-    return { success: true };
-  }
-  catch (e) {
-    if (e && typeof e === "object" && "statusCode" in e) {
-      throw e;
-    }
-    throw createError({ statusCode: 400, statusMessage: "Failed to connect to xtream server" });
-  }
+  await testXtreamConnection(xtreamUsername, xtreamPassword, xtreamUrl);
+  return { success: true };
 });
