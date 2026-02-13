@@ -19,5 +19,9 @@ export default defineNuxtConfig({
   runtimeConfig: {
     databaseUrl: "",
     jwtSecret: "",
+    smtpHost: "",
+    smtpPort: "",
+    smtpFrom: "",
+    appUrl: "",
   },
 });

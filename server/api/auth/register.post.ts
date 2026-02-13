@@ -38,5 +38,17 @@ export default defineEventHandler(async (event) => {
     activationToken,
   });
 
+  const { appUrl } = useRuntimeConfig();
+  const activationLink = `${appUrl}/api/auth/activate?token=${activationToken}`;
+
+  await sendMail(
+    body.email.toLowerCase(),
+    "Activate your MagicIPTV account",
+    `<h1>Welcome to MagicIPTV!</h1>
+    <p>Click the link below to activate your account:</p>
+    <p><a href="${activationLink}">Activate Account</a></p>
+    <p>If you didn't create this account, you can ignore this email.</p>`,
+  );
+
   return { success: true, message: "Registration successful. Please check your email to activate your account." };
 });
