@@ -87,3 +87,9 @@ export const profileUpdateSchema = z.object({
   newPin: profilePin.optional(),
   removePin: z.boolean().optional(),
 });
+
+export const xtreamTestSchema = z.object({
+  xtreamUsername,
+  xtreamPassword,
+  xtreamUrl,
+});
