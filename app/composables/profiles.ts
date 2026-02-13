@@ -59,11 +59,19 @@ export function useProfiles() {
     profiles.value = profiles.value.map(p => p.id === id ? updated : p);
   }
 
+  async function selectProfile(id: number, pin?: string): Promise<void> {
+    await $fetch(`/api/profiles/${id}/select`, {
+      method: "POST",
+      body: { pin },
+    });
+  }
+
   return {
     profiles,
     fetchProfiles,
     createProfile,
     deleteProfile,
     updateProfile,
+    selectProfile,
   };
 }

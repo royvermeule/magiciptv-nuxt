@@ -1,6 +1,6 @@
 import { profiles } from "~~/server/database/schema";
 import { profileSchema } from "~~/shared/utils/validators";
-import { and, eq, ilike, isNotNull } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 
 export default defineEventHandler(async (event) => {
   const accessToken = getCookie(event, "access_token");
@@ -27,18 +27,20 @@ export default defineEventHandler(async (event) => {
 
   const existing = await db.select({
     id: profiles.id,
+    name: profiles.name,
   })
     .from(profiles)
     .where(
-      and(
-        ilike(profiles.name, name),
-        eq(profiles.userId, payload.userId),
-      ),
+      eq(profiles.userId, payload.userId),
     )
-    .limit(1);
+    .limit(10);
 
-  if (existing.length > 0) {
+  if (existing.some(p => p.name.toLowerCase() === name.toLowerCase())) {
     throw createError({ statusCode: 409, statusMessage: `Profile with the name "${name}" already exists` });
+  }
+
+  if (existing.length >= 10) {
+    throw createError({ statusCode: 409, statusMessage: `Your profile limit of 10 profiles has been reached` });
   }
 
   const [newProfile] = await db.insert(profiles)

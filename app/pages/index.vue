@@ -4,17 +4,19 @@ import type { ProfileEditData, ProfileFormData } from "~~/shared/types/profile.t
 import type ProfileCreateModel from "~/components/profile-create-model.vue";
 import type ProfileDeleteModel from "~/components/profile-delete-model.vue";
 import type ProfileEditModel from "~/components/profile-edit-model.vue";
+import type ProfileSelectModel from "~/components/profile-select-model.vue";
 
 import ProfileCard from "~/components/profile-card.vue";
 
 const deleteModal = ref<InstanceType<typeof ProfileDeleteModel> | null>(null);
 
-const { profiles, fetchProfiles, createProfile, deleteProfile, updateProfile } = useProfiles();
+const { profiles, fetchProfiles, createProfile, deleteProfile, updateProfile, selectProfile } = useProfiles();
 const toast = useToast();
 await fetchProfiles();
 
 const createModal = ref<InstanceType<typeof ProfileCreateModel> | null>(null);
 const editModal = ref<InstanceType<typeof ProfileEditModel> | null>(null);
+const selectModal = ref<InstanceType<typeof ProfileSelectModel> | null>(null);
 
 async function handleAddProfile(data: ProfileFormData) {
   try {
@@ -77,6 +79,34 @@ async function confirmDelete(data: { id: number; pin?: string }) {
     }
   }
 }
+
+function handleSelect(id: number) {
+  const profile = profiles.value.find(p => p.id === id);
+  if (!profile) {
+    return;
+  }
+  if (profile.hasPin) {
+    selectModal.value?.open(id);
+  }
+  else {
+    confirmSelect({ id });
+  }
+}
+
+async function confirmSelect(data: { id: number; pin?: string }) {
+  try {
+    await selectProfile(data.id, data.pin);
+    navigateTo("/hub");
+  }
+  catch (e: unknown) {
+    if (e && typeof e === "object" && "statusMessage" in e) {
+      selectModal.value?.setError((e as { statusMessage: string }).statusMessage);
+    }
+    else {
+      selectModal.value?.setError("Failed to select profile");
+    }
+  }
+}
 </script>
 
 <template>
@@ -92,7 +122,7 @@ async function confirmDelete(data: { id: number; pin?: string }) {
     </div>
 
     <div v-if="profiles.length" class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-      <ProfileCard v-for="profile in profiles" :key="profile.id" :profile="profile" @edit="editProfile" @delete="handleDelete" />
+      <ProfileCard v-for="profile in profiles" :key="profile.id" :profile="profile" @edit="editProfile" @delete="handleDelete" @select="handleSelect" />
     </div>
 
     <div v-else class="mt-8 text-center text-base-content/70">
@@ -110,6 +140,10 @@ async function confirmDelete(data: { id: number; pin?: string }) {
     <ProfileEditModel
       ref="editModal"
       @submit="handleEditProfile"
+    />
+    <ProfileSelectModel
+      ref="selectModal"
+      @confirm="confirmSelect"
     />
   </div>
 </template>
