@@ -143,13 +143,13 @@ function handleSubmit() {
         maxlength="6"
       >
 
+      <label v-if="profileHasPin" class="label cursor-pointer gap-2">
+        <span class="label-text">Remove PIN</span>
+        <input v-model="removePin" type="checkbox" class="checkbox">
+      </label>
+
       <template v-if="profileHasPin">
         <div class="divider" />
-
-        <label class="label cursor-pointer gap-2">
-          <span class="label-text">Remove PIN</span>
-          <input v-model="removePin" type="checkbox" class="checkbox">
-        </label>
 
         <label class="fieldset-label" for="edit-current-pin">Current PIN</label>
         <input
