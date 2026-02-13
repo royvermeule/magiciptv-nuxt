@@ -1,0 +1,18 @@
+<script setup lang="ts">
+defineProps<{
+  profile: {
+    id: number;
+    name: string;
+  };
+}>();
+</script>
+
+<template>
+  <div class="card bg-base-100 shadow">
+    <div class="card-body">
+      <h2 class="card-title">
+        {{ profile.name }}
+      </h2>
+    </div>
+  </div>
+</template>
