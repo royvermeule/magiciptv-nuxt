@@ -1,7 +1,4 @@
-type Profile = {
-  id: number;
-  name: string;
-};
+import type { Profile } from "../../shared/types/profile.types";
 
 export function useProfiles() {
   const profiles = useState<Profile[]>("profiles", () => []);
@@ -19,8 +16,21 @@ export function useProfiles() {
     }
   }
 
+  async function createProfile(name: string): Promise<void> {
+    const headers = import.meta.server
+      ? useRequestHeaders(["cookie"])
+      : undefined;
+    const newProfile = await $fetch<Profile>("/api/profiles/create", {
+      method: "POST",
+      body: { name },
+      headers,
+    });
+    profiles.value = [...profiles.value, newProfile];
+  }
+
   return {
     profiles,
     fetchProfiles,
+    createProfile,
   };
 }

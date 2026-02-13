@@ -41,3 +41,14 @@ export const resetPasswordFormSchema = z
     message: "Passwords do not match",
     path: ["confirmPassword"],
   });
+
+export const profileSchema = z
+  .object({
+    name: z.string().min(
+      2,
+      "Profile name must be etleast 2 characters",
+    ).max(
+      12,
+      "Profile name cannot be more then 12 characters",
+    ),
+  });

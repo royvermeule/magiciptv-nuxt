@@ -3,7 +3,7 @@ const { user, logout } = useAuth();
 </script>
 
 <template>
-  <div class="min-h-screen bg-base-200">
+  <div class="flex min-h-screen flex-col bg-base-200">
     <nav class="navbar bg-base-100 shadow-sm">
       <div class="flex-1">
         <NuxtLink to="/" class="btn btn-ghost text-xl">
@@ -18,7 +18,7 @@ const { user, logout } = useAuth();
         </button>
       </div>
     </nav>
-    <main class="container mx-auto p-4">
+    <main class="container mx-auto flex-1 p-4">
       <slot />
     </main>
   </div>
