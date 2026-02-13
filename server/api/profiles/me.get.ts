@@ -1,5 +1,5 @@
 import { profiles } from "~~/server/database/schema";
-import { eq } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 
 export default defineEventHandler(async (event) => {
   const accessToken = getCookie(event, "access_token");
@@ -17,6 +17,7 @@ export default defineEventHandler(async (event) => {
   const userProfiles = await db.select({
     id: profiles.id,
     name: profiles.name,
+    hasPin: isNotNull(profiles.pin),
   })
     .from(profiles)
     .where(eq(profiles.userId, payload.userId));

@@ -1,13 +1,7 @@
 <script setup lang="ts">
-import type AppModel from "./app-model.vue";
+import type { ProfileEditData } from "~~/shared/types/profile.types";
 
-type ProfileEditData = {
-  id: number;
-  name: string;
-  xtreamUsername?: string;
-  xtreamPassword?: string;
-  xtreamUrl?: string;
-};
+import type AppModel from "./app-model.vue";
 
 const emit = defineEmits<{
   submit: [data: ProfileEditData];
@@ -16,17 +10,22 @@ const emit = defineEmits<{
 const modal = ref<InstanceType<typeof AppModel> | null>(null);
 const error = ref("");
 const profileId = ref<number | null>(null);
-const formData = ref({ name: "", xtreamUsername: "", xtreamPassword: "", xtreamUrl: "" });
+const profileHasPin = ref(false);
+const removePin = ref(false);
+const formData = ref({ name: "", xtreamUsername: "", xtreamPassword: "", xtreamUrl: "", pin: "", newPin: "" });
 
 function close() {
-  formData.value = { name: "", xtreamUsername: "", xtreamPassword: "", xtreamUrl: "" };
+  formData.value = { name: "", xtreamUsername: "", xtreamPassword: "", xtreamUrl: "", pin: "", newPin: "" };
   error.value = "";
   profileId.value = null;
+  profileHasPin.value = false;
+  removePin.value = false;
   modal.value?.close();
 }
 
-function open(profile: { id: number; name: string }) {
+function open(profile: { id: number; name: string; hasPin: boolean }) {
   profileId.value = profile.id;
+  profileHasPin.value = profile.hasPin;
   formData.value.name = profile.name;
   modal.value?.open();
 }
@@ -44,10 +43,12 @@ function handleSubmit() {
   emit("submit", {
     id: profileId.value,
     name: formData.value.name,
-    // only include xtream fields if filled in
     ...(formData.value.xtreamUsername && { xtreamUsername: formData.value.xtreamUsername }),
     ...(formData.value.xtreamPassword && { xtreamPassword: formData.value.xtreamPassword }),
     ...(formData.value.xtreamUrl && { xtreamUrl: formData.value.xtreamUrl }),
+    ...(formData.value.newPin && { newPin: formData.value.newPin }),
+    ...(formData.value.pin && { pin: formData.value.pin }),
+    ...(removePin.value && { removePin: true }),
   });
 }
 </script>
@@ -96,6 +97,41 @@ function handleSubmit() {
           class="input input-bordered w-full"
         >
       </fieldset>
+      <div class="divider">
+        PIN
+      </div>
+
+      <label v-if="!removePin" class="fieldset-label" for="edit-new-pin">New PIN</label>
+      <input
+        v-if="!removePin"
+        id="edit-new-pin"
+        v-model="formData.newPin"
+        type="password"
+        placeholder="Set a new 4-6 digit pin"
+        class="input input-bordered w-full"
+        maxlength="6"
+      >
+
+      <template v-if="profileHasPin">
+        <div class="divider" />
+
+        <label class="label cursor-pointer gap-2">
+          <span class="label-text">Remove PIN</span>
+          <input v-model="removePin" type="checkbox" class="checkbox">
+        </label>
+
+        <label class="fieldset-label" for="edit-current-pin">Current PIN</label>
+        <input
+          id="edit-current-pin"
+          v-model="formData.pin"
+          type="password"
+          placeholder="Enter current pin to confirm changes"
+          class="input input-bordered w-full"
+          maxlength="6"
+          required
+        >
+      </template>
+
       <button type="submit" class="btn btn-primary w-full">
         Edit Profile
       </button>

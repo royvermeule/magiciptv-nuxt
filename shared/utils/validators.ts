@@ -68,11 +68,14 @@ const xtreamUrl = z.url({
   error: "Xtream url must be a valid url",
 });
 
+const profilePin = z.string().regex(/^\d{4,6}$/, "Pin must be 4-6 digits");
+
 export const profileSchema = z.object({
   name: profileName,
   xtreamUsername,
   xtreamPassword,
   xtreamUrl,
+  pin: profilePin.optional(),
 });
 
 export const profileUpdateSchema = z.object({
@@ -80,4 +83,7 @@ export const profileUpdateSchema = z.object({
   xtreamUsername: xtreamUsername.optional(),
   xtreamPassword: xtreamPassword.optional(),
   xtreamUrl: xtreamUrl.optional(),
+  pin: profilePin.optional(),
+  newPin: profilePin.optional(),
+  removePin: z.boolean().optional(),
 });

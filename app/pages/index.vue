@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import type AppConfirmationModel from "~/components/app-confirmation-model.vue";
+import type { ProfileEditData, ProfileFormData } from "~~/shared/types/profile.types";
+
 import type ProfileCreateModel from "~/components/profile-create-model.vue";
+import type ProfileDeleteModel from "~/components/profile-delete-model.vue";
 import type ProfileEditModel from "~/components/profile-edit-model.vue";
 
 import ProfileCard from "~/components/profile-card.vue";
 
-const deleteModal = ref<InstanceType<typeof AppConfirmationModel> | null>(null);
-const profileToDelete = ref<number | null>(null);
+const deleteModal = ref<InstanceType<typeof ProfileDeleteModel> | null>(null);
 
 const { profiles, fetchProfiles, createProfile, deleteProfile, updateProfile } = useProfiles();
 const toast = useToast();
@@ -15,9 +16,9 @@ await fetchProfiles();
 const createModal = ref<InstanceType<typeof ProfileCreateModel> | null>(null);
 const editModal = ref<InstanceType<typeof ProfileEditModel> | null>(null);
 
-async function handleAddProfile(data: { name: string; xtreamUsername: string; xtreamPassword: string; xtreamUrl: string }) {
+async function handleAddProfile(data: ProfileFormData) {
   try {
-    await createProfile(data.name, data.xtreamUsername, data.xtreamPassword, data.xtreamUrl);
+    await createProfile(data.name, data.xtreamUsername, data.xtreamPassword, data.xtreamUrl, data.pin);
     createModal.value?.close();
     toast.show("Profile created");
   }
@@ -38,9 +39,9 @@ function editProfile(id: number) {
   }
 }
 
-async function handleEditProfile(data: { id: number; name: string; xtreamUsername?: string; xtreamPassword?: string; xtreamUrl?: string }) {
+async function handleEditProfile(data: ProfileEditData) {
   try {
-    await updateProfile(data.id, data.name, data.xtreamUsername, data.xtreamPassword, data.xtreamUrl);
+    await updateProfile(data.id, data.name, data.xtreamUsername, data.xtreamPassword, data.xtreamUrl, data.pin, data.newPin, data.removePin);
     editModal.value?.close();
     toast.show("Profile updated");
   }
@@ -55,23 +56,24 @@ async function handleEditProfile(data: { id: number; name: string; xtreamUsernam
 }
 
 function handleDelete(id: number) {
-  profileToDelete.value = id;
-  deleteModal.value?.open();
+  const profile = profiles.value.find(p => p.id === id);
+  if (profile) {
+    deleteModal.value?.open(profile);
+  }
 }
 
-async function confirmDelete() {
-  if (!profileToDelete.value)
-    return;
+async function confirmDelete(data: { id: number; pin?: string }) {
   try {
-    await deleteProfile(profileToDelete.value);
+    await deleteProfile(data.id, data.pin);
+    deleteModal.value?.close();
     toast.show("Profile deleted");
   }
   catch (e: unknown) {
     if (e && typeof e === "object" && "statusMessage" in e) {
-      toast.show((e as { statusMessage: string }).statusMessage, "error");
+      deleteModal.value?.setError((e as { statusMessage: string }).statusMessage);
     }
     else {
-      toast.show("Failed to delete profile", "error");
+      deleteModal.value?.setError("Failed to delete profile");
     }
   }
 }
@@ -101,10 +103,8 @@ async function confirmDelete() {
       ref="createModal"
       @submit="handleAddProfile"
     />
-    <AppConfirmationModel
+    <ProfileDeleteModel
       ref="deleteModal"
-      title="Delete Profile"
-      message="Are you sure you want to delete this profile? This action cannot be undone."
       @confirm="confirmDelete"
     />
     <ProfileEditModel

@@ -1,6 +1,6 @@
 import { profiles } from "~~/server/database/schema";
 import { profileSchema } from "~~/shared/utils/validators";
-import { and, eq, ilike } from "drizzle-orm";
+import { and, eq, ilike, isNotNull } from "drizzle-orm";
 
 export default defineEventHandler(async (event) => {
   const accessToken = getCookie(event, "access_token");
@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: result.error.issues[0]?.message });
   }
 
-  const { name, xtreamUsername, xtreamPassword, xtreamUrl } = result.data;
+  const { name, xtreamUsername, xtreamPassword, xtreamUrl, pin } = result.data;
 
   const db = useDb();
 
@@ -48,10 +48,12 @@ export default defineEventHandler(async (event) => {
       xtreamUsername,
       xtreamPassword,
       xtreamUrl,
+      pin,
     })
     .returning({
       id: profiles.id,
       name: profiles.name,
+      hasPin: isNotNull(profiles.pin),
     });
 
   return newProfile;

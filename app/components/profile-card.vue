@@ -1,9 +1,8 @@
 <script setup lang="ts">
+import type { Profile } from "~~/shared/types/profile.types";
+
 defineProps<{
-  profile: {
-    id: number;
-    name: string;
-  };
+  profile: Profile;
 }>();
 
 const emit = defineEmits<{
@@ -23,6 +22,7 @@ function closeDropdown() {
       <div class="flex items-center justify-between">
         <h2 class="card-title">
           {{ profile.name }}
+          <Icon v-if="profile.hasPin" name="tabler:lock" class="size-4 text-base-content/50" />
         </h2>
         <div class="dropdown dropdown-end">
           <div tabindex="0" role="button" class="btn btn-ghost btn-sm">

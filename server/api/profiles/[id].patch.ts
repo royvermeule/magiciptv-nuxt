@@ -1,6 +1,6 @@
 import { profiles } from "~~/server/database/schema";
 import { profileUpdateSchema } from "~~/shared/utils/validators";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 
 export default defineEventHandler(async (event) => {
   const accessToken = getCookie(event, "access_token");
@@ -26,12 +26,13 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: result.error.issues[0]?.message });
   }
 
-  const { name, xtreamUsername, xtreamPassword, xtreamUrl } = result.data;
+  const { name, xtreamUsername, xtreamPassword, xtreamUrl, pin, newPin, removePin } = result.data;
 
   const db = useDb();
 
   const existing = await db.select({
     id: profiles.id,
+    pin: profiles.pin,
   })
     .from(profiles)
     .where(
@@ -46,7 +47,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: `Profile does not exist` });
   }
 
-  const updateData: Record<string, string> = { name };
+  if (existing[0]?.pin && existing[0]?.pin !== pin) {
+    throw createError({ statusCode: 403, statusMessage: "Invalid pin" });
+  }
+
+  const updateData: Record<string, string | null> = { name };
   if (xtreamUsername !== undefined) {
     updateData.xtreamUsername = xtreamUsername;
   }
@@ -55,6 +60,12 @@ export default defineEventHandler(async (event) => {
   }
   if (xtreamUrl !== undefined) {
     updateData.xtreamUrl = xtreamUrl;
+  }
+  if (removePin) {
+    updateData.pin = null;
+  }
+  else if (newPin !== undefined) {
+    updateData.pin = newPin;
   }
 
   const [updated] = await db.update(profiles)
@@ -68,6 +79,7 @@ export default defineEventHandler(async (event) => {
     .returning({
       id: profiles.id,
       name: profiles.name,
+      hasPin: isNotNull(profiles.pin),
     });
 
   return updated;

@@ -1,12 +1,7 @@
 <script setup lang="ts">
-import type AppModel from "./app-model.vue";
+import type { ProfileFormData } from "~~/shared/types/profile.types";
 
-type ProfileFormData = {
-  name: string;
-  xtreamUsername: string;
-  xtreamPassword: string;
-  xtreamUrl: string;
-};
+import type AppModel from "./app-model.vue";
 
 const emit = defineEmits<{
   submit: [data: ProfileFormData];
@@ -20,13 +15,20 @@ const initialFormData: ProfileFormData = {
   xtreamUsername: "",
   xtreamPassword: "",
   xtreamUrl: "",
+  pin: "",
 };
 
 const formData = ref<ProfileFormData>({ ...initialFormData });
 
 function handleSubmit() {
   error.value = "";
-  emit("submit", { ...formData.value });
+  emit("submit", {
+    name: formData.value.name,
+    xtreamUsername: formData.value.xtreamUsername,
+    xtreamPassword: formData.value.xtreamPassword,
+    xtreamUrl: formData.value.xtreamUrl,
+    ...(formData.value.pin && { pin: formData.value.pin }),
+  });
 }
 
 function setError(message: string) {
@@ -91,6 +93,19 @@ defineExpose({ open, close, setError });
           placeholder="The xtream url from your IPTV provider"
           class="input input-bordered w-full"
           required
+        >
+        <div class="divider">
+          Optional
+        </div>
+
+        <label class="fieldset-label" for="create-pin">PIN</label>
+        <input
+          id="create-pin"
+          v-model="formData.pin"
+          type="password"
+          placeholder="4-6 digit pin to protect this profile"
+          class="input input-bordered w-full"
+          maxlength="6"
         >
       </fieldset>
       <button type="submit" class="btn btn-primary w-full">
