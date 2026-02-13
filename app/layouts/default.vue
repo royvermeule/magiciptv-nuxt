@@ -1,5 +1,7 @@
 <script setup lang="ts">
-const { user, logout } = useAuth();
+import AppToast from "~/components/app-toast.vue";
+
+const { logout } = useAuth();
 </script>
 
 <template>
@@ -11,7 +13,6 @@ const { user, logout } = useAuth();
         </NuxtLink>
       </div>
       <div class="flex items-center gap-2">
-        <span class="text-sm text-base-content/70">{{ user?.email }}</span>
         <button class="btn btn-ghost btn-sm" @click="logout">
           <Icon name="tabler:logout" class="size-5" />
           Logout
@@ -21,5 +22,6 @@ const { user, logout } = useAuth();
     <main class="container mx-auto flex-1 p-4">
       <slot />
     </main>
+    <AppToast />
   </div>
 </template>

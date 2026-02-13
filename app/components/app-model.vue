@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ title: string }>();
+defineProps<{ title?: string }>();
 const dialog = ref<HTMLDialogElement | null>(null);
 
 function open() {
@@ -16,7 +16,7 @@ defineExpose({ open, close });
 <template>
   <dialog ref="dialog" class="modal">
     <div class="modal-box">
-      <h3 class="text-lg font-bold">
+      <h3 v-if="title" class="text-lg font-bold">
         {{ title }}
       </h3>
       <slot />

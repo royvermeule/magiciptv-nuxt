@@ -1,29 +1,56 @@
 <script setup lang="ts">
-import type AppModel from "~/components/app-model.vue";
+import type AppConfirmationModel from "~/components/app-confirmation-model.vue";
+import type ProfileCreateModel from "~/components/profile-create-model.vue";
 
 import ProfileCard from "~/components/profile-card.vue";
 
-const { profiles, fetchProfiles, createProfile } = useProfiles();
+const deleteModal = ref<InstanceType<typeof AppConfirmationModel> | null>(null);
+const profileToDelete = ref<number | null>(null);
+
+const { profiles, fetchProfiles, createProfile, deleteProfile } = useProfiles();
+const toast = useToast();
 await fetchProfiles();
 
-const addProfileModal = ref<InstanceType<typeof AppModel> | null>(null);
-const newProfileName = ref("");
+const createModal = ref<InstanceType<typeof ProfileCreateModel> | null>(null);
 
-const error = ref("");
-
-async function handleAddProfile() {
-  error.value = "";
+async function handleAddProfile(data: { name: string; xtreamUsername: string; xtreamPassword: string; xtreamUrl: string }) {
   try {
-    await createProfile(newProfileName.value);
-    addProfileModal.value?.close();
-    newProfileName.value = "";
+    await createProfile(data.name);
+    createModal.value?.close();
+    toast.show("Profile created");
   }
   catch (e: unknown) {
     if (e && typeof e === "object" && "statusMessage" in e) {
-      error.value = (e as { statusMessage: string }).statusMessage;
+      createModal.value?.setError((e as { statusMessage: string }).statusMessage);
     }
     else {
-      error.value = "Failed to create profile";
+      createModal.value?.setError("Failed to create profile");
+    }
+  }
+}
+
+async function editProfile(id: number) {
+  console.log(`Profile delete for ${id}`);
+}
+
+function handleDelete(id: number) {
+  profileToDelete.value = id;
+  deleteModal.value?.open();
+}
+
+async function confirmDelete() {
+  if (!profileToDelete.value)
+    return;
+  try {
+    await deleteProfile(profileToDelete.value);
+    toast.show("Profile deleted");
+  }
+  catch (e: unknown) {
+    if (e && typeof e === "object" && "statusMessage" in e) {
+      toast.show((e as { statusMessage: string }).statusMessage, "error");
+    }
+    else {
+      toast.show("Failed to delete profile", "error");
     }
   }
 }
@@ -35,67 +62,29 @@ async function handleAddProfile() {
       <h1 class="text-2xl font-bold">
         Profiles
       </h1>
-      <button class="btn btn-primary btn-sm" @click="addProfileModal?.open()">
+      <button class="btn btn-primary btn-sm" @click="createModal?.open()">
         <Icon name="tabler:plus" class="size-5" />
         Add Profile
       </button>
     </div>
 
     <div v-if="profiles.length" class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-      <ProfileCard v-for="profile in profiles" :key="profile.id" :profile="profile" />
+      <ProfileCard v-for="profile in profiles" :key="profile.id" :profile="profile" @edit="editProfile" @delete="handleDelete" />
     </div>
 
     <div v-else class="mt-8 text-center text-base-content/70">
       <p>No profiles yet. Create your first one!</p>
     </div>
 
-    <AppModel ref="addProfileModal" title="Add Profile">
-      <form class="mt-4 space-y-4" @submit.prevent="handleAddProfile">
-        <div v-if="error" role="alert" class="alert alert-error">
-          <Icon name="tabler:alert-circle" class="size-5" />
-          <span>{{ error }}</span>
-        </div>
-        <fieldset class="fieldset">
-          <label class="fieldset-label" for="profile-name">Name</label>
-          <input
-            id="profile-name"
-            v-model="newProfileName"
-            type="text"
-            placeholder="e.g. Living Room"
-            class="input input-bordered w-full"
-            required
-          >
-          <label class="fieldset-label" for="xtream-username">Xtream username</label>
-          <input
-            id="xtream-username"
-            type="text"
-            placeholder="The username from your IPTV provider"
-            class="input input-bordered w-full"
-            required
-          >
-
-          <label class="fieldset-label" for="xtream-password">Xtream password</label>
-          <input
-            id="xtream-username"
-            type="text"
-            placeholder="The password from your IPTV provider"
-            class="input input-bordered w-full"
-            required
-          >
-
-          <label class="fieldset-label" for="xtream-url">Xtream url</label>
-          <input
-            id="xtream-username"
-            type="text"
-            placeholder="The xtream url from your IPTV provider"
-            class="input input-bordered w-full"
-            required
-          >
-        </fieldset>
-        <button type="submit" class="btn btn-primary w-full">
-          Create Profile
-        </button>
-      </form>
-    </AppModel>
+    <ProfileCreateModel
+      ref="createModal"
+      @submit="handleAddProfile"
+    />
+    <AppConfirmationModel
+      ref="deleteModal"
+      title="Delete Profile"
+      message="Are you sure you want to delete this profile? This action cannot be undone."
+      @confirm="confirmDelete"
+    />
   </div>
 </template>

@@ -42,6 +42,12 @@ export const resetPasswordFormSchema = z
     path: ["confirmPassword"],
   });
 
+export const profileId = z.number({
+  error: "Profile must be a number",
+}).positive({
+  error: "Number must be a positive value",
+});
+
 export const profileSchema = z
   .object({
     name: z.string().min(

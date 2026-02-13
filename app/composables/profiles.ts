@@ -28,9 +28,17 @@ export function useProfiles() {
     profiles.value = [...profiles.value, newProfile];
   }
 
+  async function deleteProfile(id: number): Promise<void> {
+    await $fetch(`/api/profiles/${id}`, {
+      method: "DELETE",
+    });
+    profiles.value = profiles.value.filter(p => p.id !== id);
+  }
+
   return {
     profiles,
     fetchProfiles,
     createProfile,
+    deleteProfile,
   };
 }
