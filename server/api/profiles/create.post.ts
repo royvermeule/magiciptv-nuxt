@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: result.error.issues[0]?.message });
   }
 
-  const { name } = result.data;
+  const { name, xtreamUsername, xtreamPassword, xtreamUrl } = result.data;
 
   const db = useDb();
 
@@ -45,6 +45,9 @@ export default defineEventHandler(async (event) => {
     .values({
       userId: payload.userId,
       name,
+      xtreamUsername,
+      xtreamPassword,
+      xtreamUrl,
     })
     .returning({
       id: profiles.id,
