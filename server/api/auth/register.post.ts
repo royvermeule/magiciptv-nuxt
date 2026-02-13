@@ -2,37 +2,31 @@ import { users } from "~~/server/database/schema";
 import { eq } from "drizzle-orm";
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ email: string; password: string }>(event);
+  const body = await readBody(event);
+  const result = registerSchema.safeParse(body);
 
-  if (!body.email || !body.password) {
-    throw createError({ statusCode: 400, statusMessage: "Email and password are required" });
+  if (!result.success) {
+    throw createError({ statusCode: 400, statusMessage: result.error.issues[0]?.message });
   }
 
-  const emailRegex = /^[^\s@]+@[^\s@][^\s.@]*\.[^\s@]+$/;
-  if (!emailRegex.test(body.email)) {
-    throw createError({ statusCode: 400, statusMessage: "Invalid email format" });
-  }
-
-  if (body.password.length < 8) {
-    throw createError({ statusCode: 400, statusMessage: "Password must be at least 8 characters" });
-  }
+  const { email, password } = result.data;
 
   const db = useDb();
 
   const existing = await db.select({ id: users.id })
     .from(users)
-    .where(eq(users.email, body.email.toLowerCase()))
+    .where(eq(users.email, email.toLowerCase()))
     .limit(1);
 
   if (existing.length > 0) {
     throw createError({ statusCode: 409, statusMessage: "Email already registered" });
   }
 
-  const hashedPassword = await hashPassword(body.password);
+  const hashedPassword = await hashPassword(password);
   const activationToken = generateRefreshToken();
 
   await db.insert(users).values({
-    email: body.email.toLowerCase(),
+    email: email.toLowerCase(),
     password: hashedPassword,
     isActive: false,
     activationToken,
@@ -42,7 +36,7 @@ export default defineEventHandler(async (event) => {
   const activationLink = `${appUrl}/api/auth/activate?token=${activationToken}`;
 
   await sendMail(
-    body.email.toLowerCase(),
+    email.toLowerCase(),
     "Activate your MagicIPTV account",
     `<h1>Welcome to MagicIPTV!</h1>
     <p>Click the link below to activate your account:</p>

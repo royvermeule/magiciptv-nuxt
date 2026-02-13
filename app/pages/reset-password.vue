@@ -16,13 +16,13 @@ async function handleSubmit() {
   error.value = "";
   success.value = "";
 
-  if (password.value !== confirmPassword.value) {
-    error.value = "Passwords do not match";
-    return;
-  }
+  const validation = resetPasswordFormSchema.safeParse({
+    password: password.value,
+    confirmPassword: confirmPassword.value,
+  });
 
-  if (password.value.length < 8) {
-    error.value = "Password must be at least 8 characters";
+  if (!validation.success) {
+    error.value = validation.error.issues[0].message;
     return;
   }
 
@@ -30,7 +30,7 @@ async function handleSubmit() {
   try {
     const data = await $fetch<{ message: string }>("/api/auth/reset-password", {
       method: "POST",
-      body: { token: token.value, password: password.value },
+      body: { token: token.value, password: validation.data.password },
     });
     success.value = data.message;
   }
