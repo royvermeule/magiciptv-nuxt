@@ -41,3 +41,49 @@ export const resetPasswordFormSchema = z
     message: "Passwords do not match",
     path: ["confirmPassword"],
   });
+
+export const profileId = z.number({
+  error: "Profile must be a number",
+}).positive({
+  error: "Number must be a positive value",
+});
+
+export const profileName = z.string().min(
+  2,
+  "Profile name must be at least 2 characters",
+).max(
+  12,
+  "Profile name cannot be more than 12 characters",
+);
+
+const xtreamUsername = z.string({
+  error: "Username must be a string",
+});
+
+const xtreamPassword = z.string({
+  error: "Password must be a string",
+});
+
+const xtreamUrl = z.url({
+  error: "Xtream url must be a valid url",
+});
+
+const profilePin = z.string().regex(/^\d{4,6}$/, "Pin must be 4-6 digits");
+
+export const profileSchema = z.object({
+  name: profileName,
+  xtreamUsername,
+  xtreamPassword,
+  xtreamUrl,
+  pin: profilePin.optional(),
+});
+
+export const profileUpdateSchema = z.object({
+  name: profileName,
+  xtreamUsername: xtreamUsername.optional(),
+  xtreamPassword: xtreamPassword.optional(),
+  xtreamUrl: xtreamUrl.optional(),
+  pin: profilePin.optional(),
+  newPin: profilePin.optional(),
+  removePin: z.boolean().optional(),
+});
