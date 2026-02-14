@@ -69,7 +69,7 @@ function handleSubmit() {
 </script>
 
 <template>
-  <AppModel ref="modal" title="Edit Profile">
+  <AppModel ref="modal" title="Edit Profile" :closable="true">
     <form class="mt-4 space-y-4" @submit.prevent="handleSubmit">
       <div v-if="error" role="alert" class="alert alert-error">
         <Icon name="tabler:alert-circle" class="size-5" />
