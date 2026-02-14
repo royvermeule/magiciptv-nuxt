@@ -1,4 +1,4 @@
-import { boolean, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -35,6 +35,26 @@ export const profiles = pgTable("profiles", {
   xtreamUsername: text("xtream_username"),
   xtreamPassword: text("xtream_password"),
   xtreamUrl: text("xtream_url"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+export const favoriteFolders = pgTable("favorite_folders", {
+  id: serial("id").primaryKey(),
+  profileId: integer("profile_id").references(() => profiles.id, { onDelete: "cascade" }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+export const favorites = pgTable("favorites", {
+  id: serial("id").primaryKey(),
+  profileId: integer("profile_id").references(() => profiles.id, { onDelete: "cascade" }).notNull(),
+  folderId: integer("folder_id").references(() => favoriteFolders.id, { onDelete: "set null" }),
+  streamId: integer("stream_id").notNull(),
+  tvgName: varchar("tvg_name", { length: 255 }).notNull(),
+  streamIcon: text("stream_icon"),
+  type: varchar("type", { length: 10 }).notNull(), // "live", "movie", "series"
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

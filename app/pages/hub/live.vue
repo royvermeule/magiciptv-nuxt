@@ -97,26 +97,15 @@ watch(searchQuery, async (query) => {
         </p>
 
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-          <div
+          <StreamCard
             v-for="stream in filteredStreams"
             :key="stream.stream_id"
-            class="card bg-base-100 cursor-pointer shadow-sm transition-shadow hover:shadow-md"
-          >
-            <figure class="bg-base-200 px-4 pt-4">
-              <img
-                v-if="stream.stream_icon"
-                :src="stream.stream_icon"
-                :alt="stream.name"
-                class="h-16 w-16 rounded object-contain"
-              >
-              <Icon v-else name="tabler:antenna" size="40" class="text-base-content/30" />
-            </figure>
-            <div class="card-body p-3">
-              <p class="text-center text-xs">
-                {{ stream.name }}
-              </p>
-            </div>
-          </div>
+            :stream-id="stream.stream_id"
+            :name="stream.name"
+            :icon="stream.stream_icon"
+            type="live"
+            fallback-icon="tabler:antenna"
+          />
         </div>
       </template>
     </template>

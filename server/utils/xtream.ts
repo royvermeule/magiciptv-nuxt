@@ -29,7 +29,7 @@ export async function testXtreamConnection(
   }
 }
 
-export async function getXtreamCredentials(event: H3Event) {
+export async function getProfileId(event: H3Event): Promise<number> {
   const accessToken = getCookie(event, "access_token");
   if (!accessToken) {
     throw createError({ statusCode: 401, statusMessage: "Not authenticated" });
@@ -46,11 +46,7 @@ export async function getXtreamCredentials(event: H3Event) {
   }
 
   const db = useDb();
-  const [profile] = await db.select({
-    xtreamUsername: profiles.xtreamUsername,
-    xtreamPassword: profiles.xtreamPassword,
-    xtreamUrl: profiles.xtreamUrl,
-  })
+  const [profile] = await db.select({ id: profiles.id })
     .from(profiles)
     .where(
       and(
@@ -58,6 +54,26 @@ export async function getXtreamCredentials(event: H3Event) {
         eq(profiles.userId, payload.userId),
       ),
     )
+    .limit(1);
+
+  if (!profile) {
+    throw createError({ statusCode: 404, statusMessage: "Profile not found" });
+  }
+
+  return profile.id;
+}
+
+export async function getXtreamCredentials(event: H3Event) {
+  const profileId = await getProfileId(event);
+
+  const db = useDb();
+  const [profile] = await db.select({
+    xtreamUsername: profiles.xtreamUsername,
+    xtreamPassword: profiles.xtreamPassword,
+    xtreamUrl: profiles.xtreamUrl,
+  })
+    .from(profiles)
+    .where(eq(profiles.id, profileId))
     .limit(1);
 
   if (!profile || !profile.xtreamUsername || !profile.xtreamPassword || !profile.xtreamUrl) {

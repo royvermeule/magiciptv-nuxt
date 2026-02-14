@@ -26,6 +26,7 @@ const pageTitle = computed(() => {
     "hub-live": "Live TV",
     "hub-movies": "Movies",
     "hub-series": "Series",
+    "hub-favorites": "Favorites",
   };
   return titles[route.name as string] ?? "MagicIPTV";
 });
@@ -100,7 +101,7 @@ const pageTitle = computed(() => {
 
         <ul class="space-y-1">
           <li>
-            <NuxtLink to="/hub" exact-active-class="menu-active" class="flex items-center gap-2" @click="sidebarOpen = false">
+            <NuxtLink to="/hub/favorites" exact-active-class="menu-active" class="flex items-center gap-2" @click="sidebarOpen = false">
               <Icon name="tabler:heart" class="size-5" />
               Favorites
             </NuxtLink>
