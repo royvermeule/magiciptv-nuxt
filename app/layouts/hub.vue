@@ -3,11 +3,14 @@ import type AppConfirmationModel from "~/components/app-confirmation-model.vue";
 
 const { logout } = useAuth();
 const sidebarOpen = ref(false);
+const { preload } = usePreload();
 
 onMounted(() => {
   if (window.matchMedia("(min-width: 1024px)").matches) {
     sidebarOpen.value = true;
   }
+  preload("/api/xtream/series/stream");
+  preload("/api/xtream/series/categories");
 });
 
 const route = useRoute();

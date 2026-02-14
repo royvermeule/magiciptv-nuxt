@@ -4,7 +4,7 @@ import type { Category, Stream } from "../../../../shared/types/stream.types";
 definePageMeta({ layout: "hub" });
 
 const { data: categories, status: categoriesStatus } = await useFetch<Category[]>("/api/xtream/series/categories");
-const { data: allStreams, status: streamsStatus } = await useFetch<Stream[]>("/api/xtream/series/stream");
+const { data: allStreams, status: streamsStatus } = useFetch<Stream[]>("/api/xtream/series/stream", { lazy: true });
 
 const selectedCategoryId = ref<string | null>(null);
 
@@ -50,15 +50,20 @@ const isSearchingAllCategories = computed(() => {
   return inCategory.length === 0;
 });
 
+const { paginatedItems, hasMore, loadMore, resetPage } = usePagination(filteredStreams);
+
 function selectCategory(id: string) {
   selectedCategoryId.value = id;
   searchQuery.value = "";
+  resetPage();
 }
+
+watch(searchQuery, () => resetPage());
 </script>
 
 <template>
   <div>
-    <div v-if="categoriesStatus === 'pending' || streamsStatus === 'pending'" class="flex justify-center py-8">
+    <div v-if="categoriesStatus === 'pending'" class="flex justify-center py-8">
       <span class="loading loading-spinner loading-lg" />
     </div>
 
@@ -70,14 +75,18 @@ function selectCategory(id: string) {
         @select="selectCategory"
       />
 
-      <template v-if="filteredStreams.length">
+      <div v-if="streamsStatus === 'pending'" class="flex justify-center py-8">
+        <span class="loading loading-spinner loading-lg" />
+      </div>
+
+      <template v-else-if="filteredStreams.length">
         <p v-if="isSearchingAllCategories" class="mb-3 text-sm opacity-60">
           Showing results from all categories
         </p>
 
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           <StreamCard
-            v-for="stream in filteredStreams"
+            v-for="stream in paginatedItems"
             :key="stream.series_id ?? stream.stream_id"
             :stream-id="stream.series_id ?? stream.stream_id"
             :name="stream.name"
@@ -85,6 +94,12 @@ function selectCategory(id: string) {
             type="series"
             fallback-icon="tabler:device-tv"
           />
+        </div>
+
+        <div v-if="hasMore" class="mt-4 flex justify-center">
+          <button class="btn btn-outline" @click="loadMore">
+            Show more
+          </button>
         </div>
       </template>
     </template>

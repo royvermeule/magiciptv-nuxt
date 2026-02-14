@@ -34,24 +34,30 @@ const isSearchingAllCategories = computed(() => {
 });
 
 const filteredStreams = computed(() => {
-  if (!searchQuery.value)
-    return streams.value;
+  if (!searchQuery.value) {
+    return streams.value ?? [];
+  }
 
   const term = searchQuery.value.toLowerCase();
 
   const inCategory = streams.value?.filter(s => s.name.toLowerCase().includes(term)) ?? [];
-  if (inCategory.length)
+  if (inCategory.length) {
     return inCategory;
+  }
 
   return allStreams.value?.filter(s => s.name.toLowerCase().includes(term)) ?? [];
 });
 
+const { paginatedItems, hasMore, loadMore, resetPage } = usePagination(filteredStreams);
+
 function selectCategory(id: string) {
   selectedCategoryId.value = id;
   searchQuery.value = "";
+  resetPage();
 }
 
 watch(searchQuery, async (query) => {
+  resetPage();
   if (!query)
     return;
   const term = query.toLowerCase();
@@ -87,7 +93,7 @@ watch(searchQuery, async (query) => {
 
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           <StreamCard
-            v-for="stream in filteredStreams"
+            v-for="stream in paginatedItems"
             :key="stream.stream_id"
             :stream-id="stream.stream_id"
             :name="stream.name"
@@ -95,6 +101,12 @@ watch(searchQuery, async (query) => {
             type="live"
             fallback-icon="tabler:antenna"
           />
+        </div>
+
+        <div v-if="hasMore" class="mt-4 flex justify-center">
+          <button class="btn btn-outline" @click="loadMore">
+            Show more
+          </button>
         </div>
       </template>
     </template>
