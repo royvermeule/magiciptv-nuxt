@@ -7,10 +7,11 @@ const seriesId = route.params.id as string;
 const seriesName = route.query.name as string ?? "";
 const seriesIcon = route.query.icon as string | undefined;
 
-const { data: seriesInfo, status } = await useFetch<{
+const { data: seriesInfo, status } = useFetch<{
   episodes: Record<string, { id: string; title: string; episode_num: number; container_extension: string }[]>;
 }>("/api/xtream/series/info", {
   query: { seriesId },
+  lazy: true,
 });
 
 const seasons = computed(() => Object.keys(seriesInfo.value?.episodes ?? {}).sort((a, b) => Number(a) - Number(b)));

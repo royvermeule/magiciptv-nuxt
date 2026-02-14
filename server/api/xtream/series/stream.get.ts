@@ -1,14 +1,15 @@
 const cache = new Map<string, { data: unknown; expires: number }>();
 
 export default defineEventHandler(async (event) => {
-  const { xtreamUsername, xtreamPassword, xtreamUrl } = await getXtreamCredentials(event);
-
-  const cacheKey = `series-${xtreamUsername}`;
+  const profileId = getCookie(event, "profile_id");
+  const cacheKey = `series-${profileId}`;
   const cached = cache.get(cacheKey);
 
   if (cached && cached.expires > Date.now()) {
     return cached.data;
   }
+
+  const { xtreamUsername, xtreamPassword, xtreamUrl } = await getXtreamCredentials(event);
 
   const streams = await $fetch(`${xtreamUrl}/player_api.php`, {
     params: {
@@ -25,7 +26,7 @@ export default defineEventHandler(async (event) => {
     category_id: s.category_id,
   }));
 
-  cache.set(cacheKey, { data: mapped, expires: Date.now() + 600_000 });
+  cache.set(cacheKey, { data: mapped, expires: Date.now() + 86_400_000 });
 
   return mapped;
 });

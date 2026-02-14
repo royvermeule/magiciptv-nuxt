@@ -52,6 +52,15 @@ const isSearchingAllCategories = computed(() => {
 
 const { paginatedItems, hasMore, loadMore, resetPage } = usePagination(filteredStreams);
 
+const { preload } = usePreload();
+
+watch(paginatedItems, (items) => {
+  for (const stream of items.slice(0, 10)) {
+    const id = stream.series_id ?? stream.stream_id;
+    preload(`/api/xtream/series/info?seriesId=${id}`);
+  }
+}, { once: true });
+
 function selectCategory(id: string) {
   selectedCategoryId.value = id;
   searchQuery.value = "";
