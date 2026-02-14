@@ -23,6 +23,7 @@ export default defineNuxtConfig({
     ],
   },
   runtimeConfig: {
+    appEnv: "production",
     databaseUrl: "",
     jwtSecret: "",
     smtpHost: "",
