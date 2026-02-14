@@ -10,6 +10,12 @@ export default defineNuxtConfig({
       standalone: false,
     },
   },
+  vue: {
+    compilerOptions: {
+      isCustomElement: tag => tag.startsWith("media-"),
+    },
+  },
+
   css: ["~/assets/css/main.css"],
   vite: {
     plugins: [

@@ -27,6 +27,7 @@ const pageTitle = computed(() => {
     "hub-movies": "Movies",
     "hub-series": "Series",
     "hub-favorites": "Favorites",
+    "hub-watch": "Now Playing",
   };
   return titles[route.name as string] ?? "MagicIPTV";
 });

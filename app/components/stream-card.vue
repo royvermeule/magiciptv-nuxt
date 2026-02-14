@@ -33,7 +33,10 @@ async function handleFolderClick(folderId: number) {
 </script>
 
 <template>
-  <div class="group card bg-base-100 cursor-pointer overflow-visible shadow-sm transition-shadow hover:shadow-md">
+  <NuxtLink
+    :to="{ path: '/hub/watch', query: { type, id: streamId, name, icon } }"
+    class="group card bg-base-100 cursor-pointer overflow-visible shadow-sm transition-shadow hover:shadow-md"
+  >
     <figure class="bg-base-200 relative overflow-visible px-4 pt-4">
       <img
         v-if="icon"
@@ -93,5 +96,5 @@ async function handleFolderClick(folderId: number) {
         {{ name }}
       </p>
     </div>
-  </div>
+  </NuxtLink>
 </template>
