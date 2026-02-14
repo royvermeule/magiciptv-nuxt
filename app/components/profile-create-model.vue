@@ -3,8 +3,15 @@ import type { ProfileFormData } from "~~/shared/types/profile.types";
 
 import type AppModel from "./app-model.vue";
 
+defineProps<{
+  testing?: boolean;
+  connectionStatus?: "idle" | "success" | "error";
+  connectionError?: string;
+}>();
+
 const emit = defineEmits<{
   submit: [data: ProfileFormData];
+  testConnection: [xtreamUsername: string, xtreamPassword: string, xtreamUrl: string];
 }>();
 
 const modal = ref<InstanceType<typeof AppModel> | null>(null);
@@ -43,6 +50,14 @@ function close() {
   formData.value = { ...initialFormData };
   error.value = "";
   modal.value?.close();
+}
+
+function handleTestConnection() {
+  if (!formData.value.xtreamUsername || !formData.value.xtreamPassword || !formData.value.xtreamUrl) {
+    error.value = "Fill in all xtream fields to test connection";
+    return;
+  }
+  emit("testConnection", formData.value.xtreamUsername, formData.value.xtreamPassword, formData.value.xtreamUrl);
 }
 
 defineExpose({ open, close, setError });
@@ -94,6 +109,22 @@ defineExpose({ open, close, setError });
           class="input input-bordered w-full"
           required
         >
+        <button type="button" class="btn btn-outline btn-sm" :disabled="testing" @click="handleTestConnection">
+          <span v-if="testing" class="loading loading-spinner loading-xs" />
+          <Icon v-else name="tabler:plug-connected" class="size-4" />
+          Test Connection
+        </button>
+
+        <div v-if="connectionStatus === 'success'" role="alert" class="alert alert-success">
+          <Icon name="tabler:check" class="size-5" />
+          <span>Connection successful!</span>
+        </div>
+
+        <div v-if="connectionStatus === 'error'" role="alert" class="alert alert-error">
+          <Icon name="tabler:alert-circle" class="size-5" />
+          <span>{{ connectionError }}</span>
+        </div>
+
         <div class="divider">
           Optional
         </div>

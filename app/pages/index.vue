@@ -11,6 +11,7 @@ import ProfileCard from "~/components/profile-card.vue";
 const deleteModal = ref<InstanceType<typeof ProfileDeleteModel> | null>(null);
 
 const { profiles, fetchProfiles, createProfile, deleteProfile, updateProfile, selectProfile } = useProfiles();
+const { testing, connectionStatus, connectionError, testConnection, resetConnection } = useXtream();
 const toast = useToast();
 await fetchProfiles();
 
@@ -22,6 +23,7 @@ async function handleAddProfile(data: ProfileFormData) {
   try {
     await createProfile(data.name, data.xtreamUsername, data.xtreamPassword, data.xtreamUrl, data.pin);
     createModal.value?.close();
+    resetConnection();
     toast.show("Profile created");
   }
   catch (e: unknown) {
@@ -45,6 +47,7 @@ async function handleEditProfile(data: ProfileEditData) {
   try {
     await updateProfile(data.id, data.name, data.xtreamUsername, data.xtreamPassword, data.xtreamUrl, data.pin, data.newPin, data.removePin);
     editModal.value?.close();
+    resetConnection();
     toast.show("Profile updated");
   }
   catch (e: unknown) {
@@ -131,7 +134,11 @@ async function confirmSelect(data: { id: number; pin?: string }) {
 
     <ProfileCreateModel
       ref="createModal"
+      :testing="testing"
+      :connection-status="connectionStatus"
+      :connection-error="connectionError"
       @submit="handleAddProfile"
+      @test-connection="testConnection"
     />
     <ProfileDeleteModel
       ref="deleteModal"
@@ -139,7 +146,11 @@ async function confirmSelect(data: { id: number; pin?: string }) {
     />
     <ProfileEditModel
       ref="editModal"
+      :testing="testing"
+      :connection-status="connectionStatus"
+      :connection-error="connectionError"
       @submit="handleEditProfile"
+      @test-connection="testConnection"
     />
     <ProfileSelectModel
       ref="selectModal"

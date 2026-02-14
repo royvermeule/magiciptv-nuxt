@@ -66,6 +66,10 @@ export function useProfiles() {
     });
   }
 
+  async function deselectProfile(): Promise<void> {
+    await $fetch("/api/profiles/deselect", { method: "POST" });
+  }
+
   return {
     profiles,
     fetchProfiles,
@@ -73,5 +77,6 @@ export function useProfiles() {
     deleteProfile,
     updateProfile,
     selectProfile,
+    deselectProfile,
   };
 }

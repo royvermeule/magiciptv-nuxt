@@ -3,8 +3,15 @@ import type { ProfileEditData } from "~~/shared/types/profile.types";
 
 import type AppModel from "./app-model.vue";
 
+defineProps<{
+  testing?: boolean;
+  connectionStatus?: "idle" | "success" | "error";
+  connectionError?: string;
+}>();
+
 const emit = defineEmits<{
   submit: [data: ProfileEditData];
+  testConnection: [xtreamUsername: string, xtreamPassword: string, xtreamUrl: string];
 }>();
 
 const modal = ref<InstanceType<typeof AppModel> | null>(null);
@@ -32,6 +39,14 @@ function open(profile: { id: number; name: string; hasPin: boolean }) {
 
 function setError(message: string) {
   error.value = message;
+}
+
+function handleTestConnection() {
+  if (!formData.value.xtreamUsername || !formData.value.xtreamPassword || !formData.value.xtreamUrl) {
+    error.value = "Fill in all xtream fields to test connection";
+    return;
+  }
+  emit("testConnection", formData.value.xtreamUsername, formData.value.xtreamPassword, formData.value.xtreamUrl);
 }
 
 defineExpose({ open, close, setError });
@@ -96,7 +111,23 @@ function handleSubmit() {
           placeholder="The xtream url from your IPTV provider"
           class="input input-bordered w-full"
         >
+        <button type="button" class="btn btn-outline btn-sm" :disabled="testing" @click="handleTestConnection">
+          <span v-if="testing" class="loading loading-spinner loading-xs" />
+          <Icon v-else name="tabler:plug-connected" class="size-4" />
+          Test Connection
+        </button>
+
+        <div v-if="connectionStatus === 'success'" role="alert" class="alert alert-success">
+          <Icon name="tabler:check" class="size-5" />
+          <span>Connection successful!</span>
+        </div>
+
+        <div v-if="connectionStatus === 'error'" role="alert" class="alert alert-error">
+          <Icon name="tabler:alert-circle" class="size-5" />
+          <span>{{ connectionError }}</span>
+        </div>
       </fieldset>
+
       <div class="divider">
         PIN
       </div>
@@ -112,13 +143,13 @@ function handleSubmit() {
         maxlength="6"
       >
 
+      <label v-if="profileHasPin" class="label cursor-pointer gap-2">
+        <span class="label-text">Remove PIN</span>
+        <input v-model="removePin" type="checkbox" class="checkbox">
+      </label>
+
       <template v-if="profileHasPin">
         <div class="divider" />
-
-        <label class="label cursor-pointer gap-2">
-          <span class="label-text">Remove PIN</span>
-          <input v-model="removePin" type="checkbox" class="checkbox">
-        </label>
 
         <label class="fieldset-label" for="edit-current-pin">Current PIN</label>
         <input

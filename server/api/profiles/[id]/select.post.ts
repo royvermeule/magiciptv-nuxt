@@ -1,4 +1,5 @@
 import { profiles } from "~~/server/database/schema";
+import { testXtreamConnection } from "~~/server/utils/xtream";
 import { and, eq } from "drizzle-orm";
 
 export default defineEventHandler(async (event) => {
@@ -25,6 +26,9 @@ export default defineEventHandler(async (event) => {
   const existing = await db.select({
     id: profiles.id,
     pin: profiles.pin,
+    xtreamUsername: profiles.xtreamUsername,
+    xtreamPassword: profiles.xtreamPassword,
+    xtreamUrl: profiles.xtreamUrl,
   })
     .from(profiles)
     .where(
@@ -42,6 +46,14 @@ export default defineEventHandler(async (event) => {
   if (existing[0]?.pin && existing[0]?.pin !== body?.pin) {
     throw createError({ statusCode: 403, statusMessage: "Invalid pin" });
   }
+
+  const profile = existing[0];
+
+  if (!profile?.xtreamUsername || !profile?.xtreamPassword || !profile?.xtreamUrl) {
+    throw createError({ statusCode: 400, statusMessage: "Profile is missing xtream credentials" });
+  }
+
+  await testXtreamConnection(profile.xtreamUsername, profile.xtreamPassword, profile.xtreamUrl);
 
   setCookie(event, "profile_id", String(id), {
     httpOnly: true,
