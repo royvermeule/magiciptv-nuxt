@@ -1,20 +1,9 @@
 <script setup lang="ts">
+import type { Category, Stream } from "../../../shared/types/stream.types";
+
 definePageMeta({ layout: "hub" });
 
-type LiveCategory = {
-  category_id: string;
-  category_name: string;
-  parent_id: number;
-};
-
-type LiveStream = {
-  stream_id: number;
-  name: string;
-  stream_icon: string;
-  category_id: string;
-};
-
-const { data: categories, status: categoriesStatus } = await useFetch<LiveCategory[]>("/api/xtream/live/categories");
+const { data: categories, status: categoriesStatus } = await useFetch<Category[]>("/api/xtream/live/categories");
 
 const selectedCategoryId = ref<string | null>(null);
 
@@ -24,14 +13,14 @@ watch(categories, (cats) => {
   }
 }, { immediate: true });
 
-const { data: streams, status: streamsStatus } = await useFetch<LiveStream[]>("/api/xtream/live/stream", {
+const { data: streams, status: streamsStatus } = await useFetch<Stream[]>("/api/xtream/live/stream", {
   query: { category_id: selectedCategoryId },
   watch: [selectedCategoryId],
 });
 
 const searchQuery = ref("");
 
-const { data: allStreams, execute: fetchAllStreams } = await useFetch<LiveStream[]>("/api/xtream/live/stream", {
+const { data: allStreams, execute: fetchAllStreams } = await useFetch<Stream[]>("/api/xtream/live/stream", {
   immediate: false,
   watch: false,
 });

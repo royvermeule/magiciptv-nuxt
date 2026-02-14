@@ -15,6 +15,13 @@ function closeDropdown() {
   (document.activeElement as HTMLElement)?.blur();
 }
 
+const linkTo = computed(() => {
+  if (props.type === "series") {
+    return { path: `/hub/series/${props.streamId}`, query: { name: props.name, icon: props.icon } };
+  }
+  return { path: "/hub/watch", query: { type: props.type, id: props.streamId, name: props.name, icon: props.icon } };
+});
+
 async function handleFolderClick(folderId: number) {
   const currentFolderId = getFavoriteFolderId(props.streamId, props.type);
 
@@ -34,7 +41,7 @@ async function handleFolderClick(folderId: number) {
 
 <template>
   <NuxtLink
-    :to="{ path: '/hub/watch', query: { type, id: streamId, name, icon } }"
+    :to="linkTo"
     class="group card bg-base-100 cursor-pointer overflow-visible shadow-sm transition-shadow hover:shadow-md"
   >
     <figure class="bg-base-200 relative overflow-visible px-4 pt-4">
@@ -50,7 +57,7 @@ async function handleFolderClick(folderId: number) {
       <button
         class="absolute right-2 top-2 btn btn-circle btn-ghost btn-xs transition-opacity"
         :class="isFavorited(streamId, type) ? 'opacity-100' : 'opacity-40 lg:opacity-0 lg:group-hover:opacity-100'"
-        @click.stop="toggleFavorite(streamId, name, type, icon)"
+        @click.stop.prevent="toggleFavorite(streamId, name, type, icon)"
       >
         <Icon
           :name="isFavorited(streamId, type) ? 'tabler:heart-filled' : 'tabler:heart'"
@@ -60,13 +67,12 @@ async function handleFolderClick(folderId: number) {
       </button>
 
       <!-- Add to folder dropdown -->
-      <div class="dropdown absolute left-2 top-2">
+      <div class="dropdown absolute left-2 top-2" @click.stop.prevent>
         <div
           tabindex="0"
           role="button"
           class="btn btn-circle btn-ghost btn-xs transition-opacity"
           :class="hasFolder ? 'opacity-100' : 'opacity-40 lg:opacity-0 lg:group-hover:opacity-100'"
-          @click.stop
         >
           <Icon
             :name="hasFolder ? 'tabler:folder-filled' : 'tabler:folder-plus'"
@@ -79,7 +85,7 @@ async function handleFolderClick(folderId: number) {
             <button
               class="text-xs"
               :class="getFavoriteFolderId(streamId, type) === folder.id ? 'text-error' : ''"
-              @click.stop="handleFolderClick(folder.id)"
+              @click.stop.prevent="handleFolderClick(folder.id)"
             >
               <Icon :name="getFavoriteFolderId(streamId, type) === folder.id ? 'tabler:folder-minus' : 'tabler:folder'" size="16" />
               {{ getFavoriteFolderId(streamId, type) === folder.id ? `Remove from ${folder.name}` : folder.name }}
