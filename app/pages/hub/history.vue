@@ -95,7 +95,7 @@ function timeAgo(date: string) {
     <div v-else-if="!history?.length" class="flex flex-col items-center justify-center py-16 opacity-60">
       <Icon name="tabler:history" size="48" />
       <p class="mt-4 text-sm">
-        No watch history yet. Start watching something!
+        No watch history yet
       </p>
     </div>
 
@@ -139,21 +139,21 @@ function timeAgo(date: string) {
                 :style="{ width: `${progressPercent(item)}%` }"
               />
             </div>
-            <span class="shrink-0 text-[10px] text-base-content/40">
+            <span class="shrink-0 text-[15px] text-base-content/40">
               {{ formatTime(item.currentTime) }} / {{ formatTime(item.duration) }}
             </span>
           </div>
         </div>
 
         <!-- Actions -->
-        <div class="flex shrink-0 items-center gap-1">
+        <div class="flex shrink-0 items-center gap-2">
           <button
             class="btn btn-circle btn-ghost btn-xs text-base-content/30 hover:text-error"
             @click.prevent="confirmDelete(item.id)"
           >
-            <Icon name="tabler:trash" size="16" />
+            <Icon name="tabler:trash" size="30" />
           </button>
-          <Icon name="tabler:player-play" size="20" class="text-base-content/30" />
+          <Icon name="tabler:player-play" size="25" class="text-base-content/30" />
         </div>
       </NuxtLink>
     </div>

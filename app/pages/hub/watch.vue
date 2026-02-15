@@ -99,6 +99,7 @@ function onPrevEpisode() {
     <ClientOnly>
       <AppPlayer
         v-if="stream?.url"
+        :key="streamId"
         :src="stream.url"
         :title="streamName"
         :poster="streamIcon"
