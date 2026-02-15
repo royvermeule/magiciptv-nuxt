@@ -31,6 +31,7 @@ const pageTitle = computed(() => {
     "hub-series": "Series",
     "hub-favorites": "Favorites",
     "hub-watch": "Now Playing",
+    "hub-history": "Watch History",
   };
   return titles[route.name as string] ?? "MagicIPTV";
 });
@@ -69,6 +70,9 @@ const pageTitle = computed(() => {
         </NuxtLink>
         <NuxtLink to="/hub/series" class="flex flex-1 items-center justify-center opacity-60" active-class="!text-primary !opacity-100">
           <Icon name="tabler:device-tv" size="24" />
+        </NuxtLink>
+        <NuxtLink to="/hub/history" class="flex flex-1 items-center justify-center opacity-60" active-class="!text-primary !opacity-100">
+          <Icon name="tabler:history" size="24" />
         </NuxtLink>
       </nav>
     </div>
@@ -111,9 +115,9 @@ const pageTitle = computed(() => {
             </NuxtLink>
           </li>
           <li>
-            <NuxtLink to="/hub" exact-active-class="menu-active" class="flex items-center gap-2" @click="sidebarOpen = false">
+            <NuxtLink to="/hub/history" exact-active-class="menu-active" class="flex items-center gap-2" @click="sidebarOpen = false">
               <Icon name="tabler:history" class="size-5" />
-              Last Watched
+              Watch History
             </NuxtLink>
           </li>
         </ul>

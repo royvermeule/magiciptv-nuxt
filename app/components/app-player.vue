@@ -11,6 +11,10 @@ const props = defineProps<{
   title?: string;
   poster?: string;
   type?: "live" | "movie" | "series";
+  streamId?: number;
+  seriesId?: number;
+  seasonNumber?: string;
+  episodeNumber?: number;
 }>();
 
 const router = useRouter();
@@ -29,6 +33,8 @@ let unsubscribe: (() => void) | undefined;
 
 const showSeek = computed(() => props.type === "movie" || props.type === "series");
 const isLive = computed(() => props.type === "live");
+
+const { startTracking, updateProgress, stopTracking } = useWatchHistory();
 
 function onProviderChange(event: MediaProviderChangeEvent) {
   const provider = event.detail;
@@ -61,16 +67,37 @@ onMounted(() => {
     duration.value = dur;
     volume.value = vol;
     isMuted.value = muted;
+    updateProgress(ct, dur);
   });
 
   document.addEventListener("fullscreenchange", onFullscreenChange);
+
+  if (props.streamId && !isLive.value) {
+    startTracking({
+      streamId: props.streamId,
+      type: props.type as "movie" | "series",
+      title: props.title ?? "",
+      icon: props.poster,
+      seriesId: props.seriesId,
+      seasonNumber: props.seasonNumber,
+      episodeNumber: props.episodeNumber,
+    });
+  }
 
   // Listen for subtitle track changes
   el.textTracks.addEventListener("add", () => refreshSubtitleTracks());
   el.textTracks.addEventListener("remove", () => refreshSubtitleTracks());
 
-  // Auto-play and auto-fullscreen
-  el.addEventListener("can-play", () => {
+  // Auto-play, auto-fullscreen, and resume progress
+  el.addEventListener("can-play", async () => {
+    if (props.streamId && !isLive.value) {
+      const progress = await $fetch("/api/watch-history/progress", {
+        query: { streamId: props.streamId, type: props.type },
+      }).catch(() => null);
+      if (progress?.currentTime && progress.currentTime > 0) {
+        el.currentTime = progress.currentTime;
+      }
+    }
     el.play();
     container.value?.requestFullscreen().catch(() => {
       isFullscreen.value = true;
@@ -79,6 +106,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  stopTracking();
   unsubscribe?.();
   clearTimeout(hideTimer);
   document.removeEventListener("fullscreenchange", onFullscreenChange);

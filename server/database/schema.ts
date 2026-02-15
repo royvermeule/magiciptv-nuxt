@@ -58,3 +58,22 @@ export const favorites = pgTable("favorites", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
+
+export const watchHistory = pgTable("watch_history", {
+  id: serial("id").primaryKey(),
+  profileId: integer("profile_id").references(() => profiles.id, { onDelete: "cascade" }).notNull(),
+  streamId: integer("stream_id").notNull(),
+  type: varchar("type", { length: 10 }).notNull(), // "movie" or "series"
+  title: varchar("title", { length: 255 }).notNull(),
+  icon: text("icon"),
+  // For series only
+  seriesId: integer("series_id"),
+  seasonNumber: varchar("season_number", { length: 10 }),
+  episodeNumber: integer("episode_number"),
+  // Progress tracking
+  currentTime: integer("current_time").notNull().default(0), // seconds
+  duration: integer("duration").notNull().default(0), // seconds
+  // Timestamps
+  watchedAt: timestamp("watched_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
