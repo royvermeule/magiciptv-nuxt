@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import type { Category, Stream } from "../../../shared/types/stream.types";
+import type { Category, Stream } from "../../../../shared/types/stream.types";
 
 definePageMeta({ layout: "hub" });
 
-const { data: categories, status: categoriesStatus } = await useFetch<Category[]>("/api/xtream/movies/categories");
+const { data: categories, status: categoriesStatus } = await useFetch<Category[]>("/api/xtream/series/categories");
+const { data: allStreams, status: streamsStatus } = useFetch<Stream[]>("/api/xtream/series/stream", { lazy: true });
 
 const selectedCategoryId = ref<string | null>(null);
 
@@ -13,34 +14,26 @@ watch(categories, (cats) => {
   }
 }, { immediate: true });
 
-const { data: streams, status: streamsStatus } = await useFetch<Stream[]>("/api/xtream/movies/stream", {
-  query: { category_id: selectedCategoryId },
-  watch: [selectedCategoryId],
+const streams = computed(() => {
+  if (!allStreams.value) {
+    return [];
+  }
+  if (!selectedCategoryId.value) {
+    return allStreams.value;
+  }
+  return allStreams.value.filter(s => s.category_id === selectedCategoryId.value);
 });
 
 const searchQuery = ref("");
 
-const { data: allStreams, execute: fetchAllStreams } = await useFetch<Stream[]>("/api/xtream/movies/stream", {
-  immediate: false,
-  watch: false,
-});
-
-const isSearchingAllCategories = computed(() => {
-  if (!searchQuery.value)
-    return false;
-  const term = searchQuery.value.toLowerCase();
-  const inCategory = streams.value?.filter(s => s.name.toLowerCase().includes(term)) ?? [];
-  return inCategory.length === 0;
-});
-
 const filteredStreams = computed(() => {
   if (!searchQuery.value) {
-    return streams.value ?? [];
+    return streams.value;
   }
 
   const term = searchQuery.value.toLowerCase();
+  const inCategory = streams.value.filter(s => s.name.toLowerCase().includes(term));
 
-  const inCategory = streams.value?.filter(s => s.name.toLowerCase().includes(term)) ?? [];
   if (inCategory.length) {
     return inCategory;
   }
@@ -48,7 +41,25 @@ const filteredStreams = computed(() => {
   return allStreams.value?.filter(s => s.name.toLowerCase().includes(term)) ?? [];
 });
 
+const isSearchingAllCategories = computed(() => {
+  if (!searchQuery.value) {
+    return false;
+  }
+  const term = searchQuery.value.toLowerCase();
+  const inCategory = streams.value.filter(s => s.name.toLowerCase().includes(term));
+  return inCategory.length === 0;
+});
+
 const { paginatedItems, hasMore, loadMore, resetPage } = usePagination(filteredStreams);
+
+const { preload } = usePreload();
+
+watch(paginatedItems, (items) => {
+  for (const stream of items.slice(0, 10)) {
+    const id = stream.series_id ?? stream.stream_id;
+    preload(`/api/xtream/series/info?seriesId=${id}`);
+  }
+}, { once: true });
 
 function selectCategory(id: string) {
   selectedCategoryId.value = id;
@@ -56,16 +67,7 @@ function selectCategory(id: string) {
   resetPage();
 }
 
-watch(searchQuery, async (query) => {
-  resetPage();
-  if (!query)
-    return;
-  const term = query.toLowerCase();
-  const inCategory = streams.value?.filter(s => s.name.toLowerCase().includes(term)) ?? [];
-  if (!inCategory.length && !allStreams.value) {
-    await fetchAllStreams();
-  }
-});
+watch(searchQuery, () => resetPage());
 </script>
 
 <template>
@@ -86,7 +88,7 @@ watch(searchQuery, async (query) => {
         <span class="loading loading-spinner loading-lg" />
       </div>
 
-      <template v-else>
+      <template v-else-if="filteredStreams.length">
         <p v-if="isSearchingAllCategories" class="mb-3 text-sm opacity-60">
           Showing results from all categories
         </p>
@@ -94,12 +96,12 @@ watch(searchQuery, async (query) => {
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           <StreamCard
             v-for="stream in paginatedItems"
-            :key="stream.stream_id"
-            :stream-id="stream.stream_id"
+            :key="stream.series_id ?? stream.stream_id"
+            :stream-id="stream.series_id ?? stream.stream_id"
             :name="stream.name"
-            :icon="stream.stream_icon"
-            type="movie"
-            fallback-icon="tabler:movie"
+            :icon="stream.cover ?? stream.stream_icon"
+            type="series"
+            fallback-icon="tabler:device-tv"
           />
         </div>
 

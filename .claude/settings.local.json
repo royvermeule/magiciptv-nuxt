@@ -5,7 +5,10 @@
       "Bash(gh api:*)",
       "WebFetch(domain:www.npmjs.com)",
       "Bash(pnpm info:*)",
-      "Bash(pnpm add:*)"
+      "Bash(pnpm add:*)",
+      "Bash(findstr:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(pnpm list:*)"
     ]
   }
 }

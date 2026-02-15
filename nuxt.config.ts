@@ -10,6 +10,12 @@ export default defineNuxtConfig({
       standalone: false,
     },
   },
+  vue: {
+    compilerOptions: {
+      isCustomElement: tag => tag.startsWith("media-"),
+    },
+  },
+
   css: ["~/assets/css/main.css"],
   vite: {
     plugins: [
@@ -17,6 +23,7 @@ export default defineNuxtConfig({
     ],
   },
   runtimeConfig: {
+    appEnv: "production",
     databaseUrl: "",
     jwtSecret: "",
     smtpHost: "",

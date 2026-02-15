@@ -50,16 +50,18 @@ export function setAuthCookies(
   accessToken: string,
   refreshToken: string,
 ): void {
+  const { appEnv } = useRuntimeConfig();
+  const isSecure = appEnv !== "development";
   setCookie(event, "access_token", accessToken, {
     httpOnly: true,
-    secure: true,
+    secure: isSecure,
     sameSite: "lax",
     path: "/",
     maxAge: ACCESS_TOKEN_MAX_AGE,
   });
   setCookie(event, "refresh_token", refreshToken, {
     httpOnly: true,
-    secure: true,
+    secure: isSecure,
     sameSite: "lax",
     path: "/",
     maxAge: REFRESH_TOKEN_MAX_AGE,

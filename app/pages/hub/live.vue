@@ -1,20 +1,9 @@
 <script setup lang="ts">
+import type { Category, Stream } from "../../../shared/types/stream.types";
+
 definePageMeta({ layout: "hub" });
 
-type LiveCategory = {
-  category_id: string;
-  category_name: string;
-  parent_id: number;
-};
-
-type LiveStream = {
-  stream_id: number;
-  name: string;
-  stream_icon: string;
-  category_id: string;
-};
-
-const { data: categories, status: categoriesStatus } = await useFetch<LiveCategory[]>("/api/xtream/live/categories");
+const { data: categories, status: categoriesStatus } = await useFetch<Category[]>("/api/xtream/live/categories");
 
 const selectedCategoryId = ref<string | null>(null);
 
@@ -24,14 +13,14 @@ watch(categories, (cats) => {
   }
 }, { immediate: true });
 
-const { data: streams, status: streamsStatus } = await useFetch<LiveStream[]>("/api/xtream/live/stream", {
+const { data: streams, status: streamsStatus } = await useFetch<Stream[]>("/api/xtream/live/stream", {
   query: { category_id: selectedCategoryId },
   watch: [selectedCategoryId],
 });
 
 const searchQuery = ref("");
 
-const { data: allStreams, execute: fetchAllStreams } = await useFetch<LiveStream[]>("/api/xtream/live/stream", {
+const { data: allStreams, execute: fetchAllStreams } = await useFetch<Stream[]>("/api/xtream/live/stream", {
   immediate: false,
   watch: false,
 });
@@ -45,24 +34,30 @@ const isSearchingAllCategories = computed(() => {
 });
 
 const filteredStreams = computed(() => {
-  if (!searchQuery.value)
-    return streams.value;
+  if (!searchQuery.value) {
+    return streams.value ?? [];
+  }
 
   const term = searchQuery.value.toLowerCase();
 
   const inCategory = streams.value?.filter(s => s.name.toLowerCase().includes(term)) ?? [];
-  if (inCategory.length)
+  if (inCategory.length) {
     return inCategory;
+  }
 
   return allStreams.value?.filter(s => s.name.toLowerCase().includes(term)) ?? [];
 });
 
+const { paginatedItems, hasMore, loadMore, resetPage } = usePagination(filteredStreams);
+
 function selectCategory(id: string) {
   selectedCategoryId.value = id;
   searchQuery.value = "";
+  resetPage();
 }
 
 watch(searchQuery, async (query) => {
+  resetPage();
   if (!query)
     return;
   const term = query.toLowerCase();
@@ -98,7 +93,7 @@ watch(searchQuery, async (query) => {
 
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           <StreamCard
-            v-for="stream in filteredStreams"
+            v-for="stream in paginatedItems"
             :key="stream.stream_id"
             :stream-id="stream.stream_id"
             :name="stream.name"
@@ -106,6 +101,12 @@ watch(searchQuery, async (query) => {
             type="live"
             fallback-icon="tabler:antenna"
           />
+        </div>
+
+        <div v-if="hasMore" class="mt-4 flex justify-center">
+          <button class="btn btn-outline" @click="loadMore">
+            Show more
+          </button>
         </div>
       </template>
     </template>

@@ -55,9 +55,11 @@ export default defineEventHandler(async (event) => {
 
   await testXtreamConnection(profile.xtreamUsername, profile.xtreamPassword, profile.xtreamUrl);
 
+  const { appEnv } = useRuntimeConfig();
+  const isSecure = appEnv !== "development";
   setCookie(event, "profile_id", String(id), {
     httpOnly: true,
-    secure: true,
+    secure: isSecure,
     sameSite: "lax",
     path: "/",
   });
