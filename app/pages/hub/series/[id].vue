@@ -21,7 +21,7 @@ watch(seasons, (s) => {
   if (s.length && !selectedSeason.value) {
     selectedSeason.value = s[0] ?? "";
   }
-}, { immediate: true });
+});
 
 const episodes = computed(() => seriesInfo.value?.episodes[selectedSeason.value] ?? []);
 </script>
