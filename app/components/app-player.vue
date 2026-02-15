@@ -15,6 +15,13 @@ const props = defineProps<{
   seriesId?: number;
   seasonNumber?: string;
   episodeNumber?: number;
+  hasPrevEpisode?: boolean;
+  hasNextEpisode?: boolean;
+}>();
+
+const emit = defineEmits<{
+  prevEpisode: [];
+  nextEpisode: [];
 }>();
 
 const router = useRouter();
@@ -54,6 +61,18 @@ function goBack() {
     });
   }
   router.back();
+}
+
+function goPrevEpisode() {
+  stopTracking();
+  emit("prevEpisode");
+  resetHideTimer();
+}
+
+function goNextEpisode() {
+  stopTracking(true);
+  emit("nextEpisode");
+  resetHideTimer();
 }
 
 onMounted(() => {
@@ -376,6 +395,14 @@ function formatTime(seconds: number) {
       <!-- Center — background click hides, buttons stop propagation -->
       <div class="flex flex-1 items-center justify-center gap-4 sm:gap-8" @click="hideControls">
         <button
+          v-if="hasPrevEpisode"
+          class="flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-black/40 p-2 text-white transition-colors hover:bg-black/60 sm:p-3"
+          @click.stop="goPrevEpisode"
+        >
+          <Icon name="tabler:player-skip-back-filled" class="size-5 sm:size-6" />
+        </button>
+
+        <button
           v-if="showSeek"
           class="flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-black/40 p-2 text-white transition-colors hover:bg-black/60 sm:p-3"
           @click.stop="seekBackward"
@@ -396,6 +423,14 @@ function formatTime(seconds: number) {
           @click.stop="seekForward"
         >
           <Icon name="tabler:rewind-forward-10" class="size-6 sm:size-8" />
+        </button>
+
+        <button
+          v-if="hasNextEpisode"
+          class="flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-black/40 p-2 text-white transition-colors hover:bg-black/60 sm:p-3"
+          @click.stop="goNextEpisode"
+        >
+          <Icon name="tabler:player-skip-forward-filled" class="size-5 sm:size-6" />
         </button>
       </div>
 

@@ -14,7 +14,11 @@ const { data: seriesInfo, status } = useFetch<{
   lazy: true,
 });
 
-const { data: lastWatched } = useFetch(`/api/watch-history/series/${seriesId}`, { lazy: true });
+const { data: lastWatched, refresh: refreshLastWatched } = useFetch(`/api/watch-history/series/${seriesId}`, { lazy: true });
+
+onMounted(() => {
+  refreshLastWatched();
+});
 
 const seasons = computed(() => Object.keys(seriesInfo.value?.episodes ?? {}).sort((a, b) => Number(a) - Number(b)));
 const selectedSeason = ref<string>("");

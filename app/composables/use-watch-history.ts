@@ -1,5 +1,6 @@
 export function useWatchHistory() {
   let saveTimer: ReturnType<typeof setInterval> | undefined;
+  let stopped = false;
 
   type WatchMeta = {
     streamId: number;
@@ -31,6 +32,7 @@ export function useWatchHistory() {
 
   function startTracking(data: WatchMeta) {
     meta.value = data;
+    stopped = false;
     saveTimer = setInterval(save, 10_000);
   }
 
@@ -39,9 +41,15 @@ export function useWatchHistory() {
     duration.value = dur;
   }
 
-  function stopTracking() {
+  function stopTracking(skipSave = false) {
+    if (stopped) {
+      return;
+    }
+    stopped = true;
     clearInterval(saveTimer);
-    save();
+    if (!skipSave) {
+      save();
+    }
   }
 
   return {

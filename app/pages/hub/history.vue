@@ -1,7 +1,30 @@
 <script setup lang="ts">
+import type AppConfirmationModel from "~/components/app-confirmation-model.vue";
+
 definePageMeta({ layout: "hub" });
 
-const { data: history, status } = useFetch("/api/watch-history", { lazy: true });
+const { data: history, status, refresh } = useFetch("/api/watch-history", { lazy: true });
+
+onMounted(() => {
+  refresh();
+});
+
+const deleteModal = ref<InstanceType<typeof AppConfirmationModel> | null>(null);
+const pendingDeleteId = ref<number | null>(null);
+
+function confirmDelete(id: number) {
+  pendingDeleteId.value = id;
+  deleteModal.value?.open();
+}
+
+async function handleDelete() {
+  if (!pendingDeleteId.value) {
+    return;
+  }
+  await $fetch(`/api/watch-history/${pendingDeleteId.value}`, { method: "DELETE" });
+  pendingDeleteId.value = null;
+  await refresh();
+}
 
 function progressPercent(item: { currentTime: number; duration: number }) {
   if (!item.duration) {
@@ -122,9 +145,24 @@ function timeAgo(date: string) {
           </div>
         </div>
 
-        <!-- Play icon -->
-        <Icon name="tabler:player-play" size="20" class="shrink-0 text-base-content/30" />
+        <!-- Actions -->
+        <div class="flex shrink-0 items-center gap-1">
+          <button
+            class="btn btn-circle btn-ghost btn-xs text-base-content/30 hover:text-error"
+            @click.prevent="confirmDelete(item.id)"
+          >
+            <Icon name="tabler:trash" size="16" />
+          </button>
+          <Icon name="tabler:player-play" size="20" class="text-base-content/30" />
+        </div>
       </NuxtLink>
     </div>
+
+    <AppConfirmationModel
+      ref="deleteModal"
+      title="Remove from history"
+      message="Are you sure you want to remove this from your watch history?"
+      @confirm="handleDelete"
+    />
   </div>
 </template>
