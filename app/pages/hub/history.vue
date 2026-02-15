@@ -147,6 +147,15 @@ function timeAgo(date: string) {
 
         <!-- Actions -->
         <div class="flex shrink-0 items-center gap-2">
+          <NuxtLink
+            v-if="item.type === 'series' && item.seriesId"
+            :to="`/hub/series/${item.seriesId}`"
+            class="btn btn-circle btn-ghost btn-xs text-base-content/30 hover:text-info"
+            title="All episodes"
+            @click.stop
+          >
+            <Icon name="tabler:list" size="30" />
+          </NuxtLink>
           <button
             class="btn btn-circle btn-ghost btn-xs text-base-content/30 hover:text-error"
             @click.prevent="confirmDelete(item.id)"

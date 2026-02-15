@@ -18,6 +18,18 @@ export function useAuth() {
       user.value = data.user;
     }
     catch {
+      // Access token expired — try refreshing (client-side only)
+      if (import.meta.client) {
+        try {
+          await $fetch("/api/auth/refresh", { method: "POST" });
+          const data = await $fetch<{ user: AuthUser }>("/api/auth/me");
+          user.value = data.user;
+          return;
+        }
+        catch {
+          // Refresh also failed — fully logged out
+        }
+      }
       user.value = null;
     }
   }

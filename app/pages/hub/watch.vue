@@ -96,6 +96,17 @@ function onPrevEpisode() {
 
 <template>
   <div>
+    <!-- All Episodes link for series -->
+    <div v-if="isSeries && seriesId" class="mb-3">
+      <NuxtLink
+        :to="`/hub/series/${seriesId}`"
+        class="btn btn-ghost btn-sm gap-1 text-base-content/60"
+      >
+        <Icon name="tabler:list" size="18" />
+        All episodes
+      </NuxtLink>
+    </div>
+
     <ClientOnly>
       <AppPlayer
         v-if="stream?.url"

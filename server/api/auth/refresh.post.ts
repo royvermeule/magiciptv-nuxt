@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
   const newAccessToken = await generateAccessToken(storedToken.userId);
   const newRefreshToken = generateRefreshToken();
 
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   await db.insert(refreshTokens).values({
     userId: storedToken.userId,
     token: newRefreshToken,
