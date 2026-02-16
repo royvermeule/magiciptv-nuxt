@@ -1,17 +1,17 @@
 <script setup lang="ts">
-import type { MediaProviderChangeEvent, TextTrack } from "vidstack";
+import type { TextTrack } from "vidstack";
 import type { MediaPlayerElement } from "vidstack/elements";
 
-import { isHLSProvider } from "vidstack";
 import "vidstack/player";
 import "vidstack/player/styles/default/theme.css";
 
 const props = defineProps<{
-  src: string;
+  src?: string | null;
   title?: string;
   poster?: string;
   type?: "live" | "movie" | "series";
   streamId?: number;
+  seriesName?: string;
   seriesId?: number;
   seasonNumber?: string;
   episodeNumber?: number;
@@ -24,6 +24,8 @@ const emit = defineEmits<{
   nextEpisode: [];
 }>();
 
+// const { currentMedia, setCurrentMedia, unsetCurrentMedia } = usePlayer();
+
 const router = useRouter();
 const player = ref<MediaPlayerElement>();
 const container = ref<HTMLElement>();
@@ -34,21 +36,18 @@ const controlsVisible = ref(true);
 const isFullscreen = ref(false);
 const volume = ref(1);
 const isMuted = ref(false);
+const needsManualPlay = ref(false);
+let currentBlobUrl: string | null = null;
+
+const proxiedSrc = computed(() => props.src);
 
 let hideTimer: ReturnType<typeof setTimeout>;
 let unsubscribe: (() => void) | undefined;
 
-const showSeek = computed(() => props.type === "movie" || props.type === "series");
-const isLive = computed(() => props.type === "live");
-
 const { startTracking, updateProgress, stopTracking } = useWatchHistory();
 
-function onProviderChange(event: MediaProviderChangeEvent) {
-  const provider = event.detail;
-  if (isHLSProvider(provider)) {
-    provider.config = {};
-  }
-}
+const showSeek = computed(() => props.type === "movie" || props.type === "series");
+const isLive = computed(() => props.type === "live");
 
 function onFullscreenChange() {
   isFullscreen.value = !!document.fullscreenElement;
@@ -75,6 +74,14 @@ function goNextEpisode() {
   resetHideTimer();
 }
 
+function manualPlay() {
+  needsManualPlay.value = false;
+  player.value?.play();
+  container.value?.requestFullscreen().catch(() => {
+    isFullscreen.value = true;
+  });
+}
+
 onMounted(() => {
   const el = player.value;
   if (!el)
@@ -91,23 +98,33 @@ onMounted(() => {
 
   document.addEventListener("fullscreenchange", onFullscreenChange);
 
+  isFullscreen.value = !!document.fullscreenElement;
+
   if (props.streamId && !isLive.value) {
     startTracking({
       streamId: props.streamId,
       type: props.type as "movie" | "series",
       title: props.title ?? "",
       icon: props.poster,
+      seriesName: props.seriesName,
       seriesId: props.seriesId,
       seasonNumber: props.seasonNumber,
       episodeNumber: props.episodeNumber,
     });
   }
 
-  // Listen for subtitle track changes
   el.textTracks.addEventListener("add", () => refreshSubtitleTracks());
   el.textTracks.addEventListener("remove", () => refreshSubtitleTracks());
 
-  // Auto-play, auto-fullscreen, and resume progress
+  el.addEventListener("error", (ev: Event) => {
+    const v = el.querySelector("video") as HTMLVideoElement | null;
+    console.warn("app-player: provider error", {
+      event: ev,
+      mediaError: v?.error ?? null,
+      src: props.src,
+    });
+  });
+
   el.addEventListener("can-play", async () => {
     if (props.streamId && !isLive.value) {
       const progress = await $fetch("/api/watch-history/progress", {
@@ -117,11 +134,78 @@ onMounted(() => {
         el.currentTime = progress.currentTime;
       }
     }
-    el.play();
-    container.value?.requestFullscreen().catch(() => {
-      isFullscreen.value = true;
-    });
+    try {
+      await el.play();
+    }
+    catch {
+      needsManualPlay.value = true;
+    }
   }, { once: true });
+});
+
+watch(() => props.src, () => {
+  const wasPlaying = isPlaying.value;
+
+  currentTime.value = 0;
+  duration.value = 0;
+  needsManualPlay.value = false;
+  if (currentBlobUrl) {
+    URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = null;
+  }
+
+  if (player.value) {
+    try {
+      player.value.pause();
+      player.value.currentTime = 0;
+    }
+    catch {
+      /* ignore */
+    }
+
+    const shouldAutoPlay = wasPlaying;
+    if (shouldAutoPlay) {
+      const tryPlayNow = async () => {
+        try {
+          await player.value?.play();
+          return true;
+        }
+        catch {
+          return false;
+        }
+      };
+
+      tryPlayNow().then((didPlay) => {
+        if (!didPlay) {
+          const onCanPlay = async () => {
+            try {
+              await player.value?.play();
+            }
+            catch {
+              needsManualPlay.value = true;
+            }
+          };
+          player.value?.addEventListener("can-play", onCanPlay, { once: true });
+        }
+      });
+    }
+  }
+});
+
+watch(() => props.streamId, (id) => {
+  stopTracking();
+  if (id && !isLive.value) {
+    startTracking({
+      streamId: id,
+      type: props.type as "movie" | "series",
+      title: props.title ?? "",
+      icon: props.poster,
+      seriesName: props.seriesName,
+      seriesId: props.seriesId,
+      seasonNumber: props.seasonNumber,
+      episodeNumber: props.episodeNumber,
+    });
+  }
 });
 
 onUnmounted(() => {
@@ -129,26 +213,38 @@ onUnmounted(() => {
   unsubscribe?.();
   clearTimeout(hideTimer);
   document.removeEventListener("fullscreenchange", onFullscreenChange);
+  if (currentBlobUrl) {
+    URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = null;
+  }
 });
 
 function seekBackward() {
-  if (player.value)
+  if (player.value) {
     player.value.currentTime = Math.max(0, player.value.currentTime - 10);
+  }
   resetHideTimer();
 }
 
 function seekForward() {
-  if (player.value)
+  if (player.value) {
     player.value.currentTime += 10;
+  }
   resetHideTimer();
 }
 
 function togglePlay() {
   if (!player.value)
     return;
-  if (player.value.paused)
-    player.value.play();
-  else player.value.pause();
+  if (player.value.paused) {
+    player.value.play().catch(() => {});
+    if (!document.fullscreenElement) {
+      container.value?.requestFullscreen().catch(() => {});
+    }
+  }
+  else {
+    player.value.pause();
+  }
   resetHideTimer();
 }
 
@@ -159,7 +255,6 @@ async function toggleFullscreen() {
 
   if (!document.fullscreenElement) {
     await el.requestFullscreen().catch(() => {
-      // Fallback to CSS fullscreen if API not supported
       isFullscreen.value = true;
     });
   }
@@ -171,7 +266,6 @@ async function toggleFullscreen() {
   resetHideTimer();
 }
 
-// Volume controls
 const volumeIcon = computed(() => {
   if (isMuted.value || volume.value === 0) {
     return "tabler:volume-off";
@@ -185,26 +279,22 @@ const volumeIcon = computed(() => {
 const volumeProgress = computed(() => `${(isMuted.value ? 0 : volume.value) * 100}%`);
 
 function toggleMute() {
-  if (!player.value) {
+  if (!player.value)
     return;
-  }
   player.value.muted = !player.value.muted;
   resetHideTimer();
 }
 
 function onVolumeInput(e: Event) {
-  if (!player.value) {
-    return;
-  }
   const val = (e.target as HTMLInputElement).valueAsNumber;
+  if (!player.value)
+    return;
   player.value.volume = val;
-  if (val > 0 && player.value.muted) {
+  if (val > 0 && player.value.muted)
     player.value.muted = false;
-  }
   resetHideTimer();
 }
 
-// Subtitle controls
 type SubtitleTrack = {
   id: string;
   label: string;
@@ -355,33 +445,38 @@ function formatTime(seconds: number) {
     <media-player
       ref="player"
       class="player"
-      :src="src"
+      :src="proxiedSrc"
       :title="title"
-      crossorigin
       playsinline
-      @provider-change="onProviderChange"
     >
       <media-provider />
     </media-player>
 
-    <!--
-        Touch capture layer: ALWAYS interactive, promoted to its own
-        compositor layer so mobile browsers can't route touches to the
-        video hardware layer underneath.
-      -->
+    <!-- Manual play overlay (shown when autoplay is blocked) -->
+    <div
+      v-if="needsManualPlay"
+      class="absolute inset-0 z-30 flex cursor-pointer items-center justify-center bg-black/60"
+      @click="manualPlay"
+    >
+      <div class="flex flex-col items-center gap-3">
+        <div class="flex size-20 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm">
+          <Icon name="tabler:player-play-filled" size="40" class="text-white" />
+        </div>
+        <span class="text-sm text-white/80">Tap to play</span>
+      </div>
+    </div>
+
     <div
       class="touch-capture"
       @pointerdown="showControlsTemporarily"
       @pointermove="showControlsTemporarily"
     />
 
-    <!-- Controls overlay (above touch capture) -->
     <div
       class="controls-layer"
       :class="controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0'"
       @pointermove="showControlsTemporarily"
     >
-      <!-- Top bar — back button + title -->
       <div class="flex h-8 shrink-0 items-center gap-2 bg-linear-to-b from-black/50 to-transparent px-3 sm:h-16 sm:px-4" @click="hideControls">
         <button
           class="flex shrink-0 cursor-pointer items-center justify-center rounded-full p-1 text-white transition-colors hover:bg-white/20"
@@ -392,7 +487,6 @@ function formatTime(seconds: number) {
         <span v-if="title" class="truncate text-sm text-white sm:text-base" @click.stop>{{ title }}</span>
       </div>
 
-      <!-- Center — background click hides, buttons stop propagation -->
       <div class="flex flex-1 items-center justify-center gap-4 sm:gap-8" @click="hideControls">
         <button
           v-if="hasPrevEpisode"
@@ -434,7 +528,6 @@ function formatTime(seconds: number) {
         </button>
       </div>
 
-      <!-- Bottom controls -->
       <div class="shrink-0 bg-linear-to-t from-black/60 to-transparent px-3 pb-1 pt-4 sm:px-4 sm:pb-3 sm:pt-8" @click.stop>
         <input
           v-if="!isLive"
@@ -479,7 +572,6 @@ function formatTime(seconds: number) {
           </div>
 
           <div class="flex items-center gap-1">
-            <!-- Subtitle button -->
             <div v-if="showSubtitles" class="relative">
               <button
                 class="rounded p-1 text-white transition-colors hover:bg-white/20"
@@ -489,7 +581,6 @@ function formatTime(seconds: number) {
                 <Icon name="tabler:message-language" size="20" />
               </button>
 
-              <!-- Subtitle menu -->
               <div
                 v-if="subtitleMenuOpen"
                 class="absolute bottom-full right-0 mb-2 min-w-40 rounded-lg bg-base-300/95 py-1 shadow-lg backdrop-blur-sm"

@@ -8,12 +8,15 @@ const streamId = computed(() => route.query.id as string);
 const streamName = computed(() => route.query.name as string ?? "");
 const streamIcon = computed(() => route.query.icon as string | undefined);
 const seriesId = computed(() => route.query.seriesId ? Number(route.query.seriesId) : undefined);
+const seriesNameQuery = computed(() => route.query.seriesName as string | undefined);
 const seasonNumber = computed(() => route.query.season as string | undefined);
 const episodeNumber = computed(() => route.query.episode ? Number(route.query.episode) : undefined);
 
 const { data: stream } = await useFetch("/api/xtream/stream-url", {
   query: { type, id: streamId },
 });
+
+// player is local to this page (AppPlayer is rendered below)
 
 // Fetch series episode list for prev/next navigation
 type SeriesInfoResponse = {
@@ -50,6 +53,8 @@ const currentEpisodeIndex = computed(() => {
 const hasPrevEpisode = computed(() => currentEpisodeIndex.value > 0);
 const hasNextEpisode = computed(() => currentEpisodeIndex.value >= 0 && currentEpisodeIndex.value < allEpisodes.value.length - 1);
 
+// (no global player wiring here)
+
 function navigateToEpisode(ep: { season: string; id: string; title: string; ext: string }) {
   navigateTo({
     path: "/hub/watch",
@@ -60,6 +65,7 @@ function navigateToEpisode(ep: { season: string; id: string; title: string; ext:
       icon: streamIcon.value,
       ext: ep.ext,
       seriesId: seriesId.value,
+      seriesName: seriesNameQuery.value,
       season: ep.season,
       episode: allEpisodes.value.find(e => e.id === ep.id)?.episodeNum,
     },
@@ -108,6 +114,9 @@ function onPrevEpisode() {
     </div>
 
     <ClientOnly>
+      <!-- keep the same AppPlayer instance across episode navigation so
+           fullscreen mode is preserved (removing the :key prevents a
+           full component remount when the query/streamId changes) -->
       <AppPlayer
         v-if="stream?.url"
         :key="streamId"
@@ -116,6 +125,7 @@ function onPrevEpisode() {
         :poster="streamIcon"
         :type="type"
         :stream-id="Number(streamId)"
+        :series-name="seriesNameQuery"
         :series-id="seriesId"
         :season-number="seasonNumber"
         :episode-number="episodeNumber"

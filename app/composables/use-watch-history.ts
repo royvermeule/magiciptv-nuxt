@@ -7,6 +7,7 @@ export function useWatchHistory() {
     type: "movie" | "series";
     title: string;
     icon?: string;
+    seriesName?: string;
     seriesId?: number;
     seasonNumber?: string;
     episodeNumber?: number;

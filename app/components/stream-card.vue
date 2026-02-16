@@ -22,6 +22,20 @@ const linkTo = computed(() => {
   return { path: "/hub/watch", query: { type: props.type, id: props.streamId, name: props.name, icon: props.icon } };
 });
 
+// ...existing code...
+// (pointerdown prefetch/play-intent removed — restore simple navigation)
+
+// Called on click to request fullscreen (runs immediately before the
+// client-side navigation triggered by NuxtLink). Kept separate from
+// pointerdown to avoid cancelling navigation in some browsers.
+function handleClick_RequestFullscreen(e: MouseEvent) {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
+    return;
+  if (linkTo.value?.path === "/hub/watch") {
+    document.documentElement.requestFullscreen().catch(() => {});
+  }
+}
+
 async function handleFolderClick(folderId: number) {
   const currentFolderId = getFavoriteFolderId(props.streamId, props.type);
 
@@ -43,6 +57,7 @@ async function handleFolderClick(folderId: number) {
   <NuxtLink
     :to="linkTo"
     class="group card bg-base-100 cursor-pointer overflow-visible shadow-sm transition-shadow hover:shadow-md"
+    @click="handleClick_RequestFullscreen"
   >
     <figure class="bg-base-200 relative overflow-visible px-4 pt-4">
       <img

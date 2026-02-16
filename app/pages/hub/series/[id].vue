@@ -30,6 +30,8 @@ watch(seasons, (s) => {
 });
 
 const episodes = computed(() => seriesInfo.value?.episodes[selectedSeason.value] ?? []);
+
+// restore default navigation behavior for episodes (remove prefetch/play-intent)
 </script>
 
 <template>
@@ -57,7 +59,7 @@ const episodes = computed(() => seriesInfo.value?.episodes[selectedSeason.value]
           Continue watching
         </h3>
         <NuxtLink
-          :to="{ path: '/hub/watch', query: { type: 'series', id: lastWatched.streamId, name: lastWatched.title, icon: seriesIcon, seriesId, season: lastWatched.seasonNumber, episode: lastWatched.episodeNumber } }"
+          :to="{ path: '/hub/watch', query: { type: 'series', id: lastWatched.streamId, name: lastWatched.title, icon: seriesIcon, seriesId, seriesName, season: lastWatched.seasonNumber, episode: lastWatched.episodeNumber } }"
           class="flex items-center gap-3 rounded-lg bg-base-200 p-3 transition-colors hover:bg-base-300"
         >
           <Icon name="tabler:player-play-filled" size="24" class="shrink-0 text-primary" />
@@ -95,7 +97,7 @@ const episodes = computed(() => seriesInfo.value?.episodes[selectedSeason.value]
         <NuxtLink
           v-for="ep in episodes"
           :key="ep.id"
-          :to="{ path: '/hub/watch', query: { type: 'series', id: ep.id, name: ep.title, icon: seriesIcon, ext: ep.container_extension, seriesId, season: selectedSeason, episode: ep.episode_num } }"
+          :to="{ path: '/hub/watch', query: { type: 'series', id: ep.id, name: ep.title, icon: seriesIcon, ext: ep.container_extension, seriesId, seriesName, season: selectedSeason, episode: ep.episode_num } }"
           class="btn btn-ghost justify-start gap-3"
         >
           <Icon name="tabler:player-play" size="18" />

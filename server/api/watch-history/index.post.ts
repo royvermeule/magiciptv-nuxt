@@ -10,6 +10,7 @@ export default defineEventHandler(async (event) => {
     type: "movie" | "series";
     title: string;
     icon?: string;
+    seriesName?: string;
     seriesId?: number;
     seasonNumber?: string;
     episodeNumber?: number;
@@ -39,6 +40,7 @@ export default defineEventHandler(async (event) => {
         duration: body.duration,
         title: body.title,
         icon: body.icon,
+        seriesName: body.seriesName,
         seriesId: body.seriesId,
         seasonNumber: body.seasonNumber,
         episodeNumber: body.episodeNumber,
@@ -56,6 +58,7 @@ export default defineEventHandler(async (event) => {
       type: body.type,
       title: body.title,
       icon: body.icon,
+      seriesName: body.seriesName,
       seriesId: body.seriesId,
       seasonNumber: body.seasonNumber,
       episodeNumber: body.episodeNumber,

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type AppConfirmationModel from "~/components/app-confirmation-model.vue";
 
+// ...existing code...
+
 const { logout } = useAuth();
 const sidebarOpen = ref(false);
 const { preload } = usePreload();
@@ -35,6 +37,7 @@ const pageTitle = computed(() => {
   };
   return titles[route.name as string] ?? "MagicIPTV";
 });
+// ...existing code...
 </script>
 
 <template>

@@ -67,6 +67,7 @@ export const watchHistory = pgTable("watch_history", {
   title: varchar("title", { length: 255 }).notNull(),
   icon: text("icon"),
   // For series only
+  seriesName: varchar("series_name", { length: 255 }),
   seriesId: integer("series_id"),
   seasonNumber: varchar("season_number", { length: 10 }),
   episodeNumber: integer("episode_number"),
