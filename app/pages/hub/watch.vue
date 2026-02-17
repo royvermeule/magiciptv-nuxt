@@ -1,4 +1,8 @@
 <script setup lang="ts">
+// Ensure we exit fullscreen if the user navigates away from this page
+// (covers hardware/back-button and other navigation paths).
+import { useFullscreen } from "~/composables/use-fullscreen";
+
 definePageMeta({ layout: "hub" });
 
 const route = useRoute();
@@ -15,6 +19,8 @@ const episodeNumber = computed(() => route.query.episode ? Number(route.query.ep
 const { data: stream } = await useFetch("/api/xtream/stream-url", {
   query: { type, id: streamId },
 });
+const { ensureExitOnRouteLeave } = useFullscreen();
+ensureExitOnRouteLeave();
 
 // player is local to this page (AppPlayer is rendered below)
 
@@ -52,6 +58,36 @@ const currentEpisodeIndex = computed(() => {
 
 const hasPrevEpisode = computed(() => currentEpisodeIndex.value > 0);
 const hasNextEpisode = computed(() => currentEpisodeIndex.value >= 0 && currentEpisodeIndex.value < allEpisodes.value.length - 1);
+
+const nextStreamUrl = ref<string | null>(null);
+const prevStreamUrl = ref<string | null>(null);
+
+watch(currentEpisodeIndex, async (idx) => {
+  if (!isSeries) {
+    nextStreamUrl.value = null;
+    prevStreamUrl.value = null;
+    return;
+  }
+
+  const next = allEpisodes.value[idx + 1];
+  const prev = allEpisodes.value[idx - 1];
+
+  if (next) {
+    const res = await $fetch("/api/xtream/stream-url", { query: { type: type.value, id: next.id } }).catch(() => null);
+    nextStreamUrl.value = res?.url ?? null;
+  }
+  else {
+    nextStreamUrl.value = null;
+  }
+
+  if (prev) {
+    const res = await $fetch("/api/xtream/stream-url", { query: { type: type.value, id: prev.id } }).catch(() => null);
+    prevStreamUrl.value = res?.url ?? null;
+  }
+  else {
+    prevStreamUrl.value = null;
+  }
+}, { immediate: true });
 
 // (no global player wiring here)
 
@@ -115,12 +151,13 @@ function onPrevEpisode() {
 
     <ClientOnly>
       <!-- keep the same AppPlayer instance across episode navigation so
-           fullscreen mode is preserved (removing the :key prevents a
-           full component remount when the query/streamId changes) -->
+     fullscreen mode is preserved (removing the :key prevents a
+     full component remount when the query/streamId changes) -->
       <AppPlayer
         v-if="stream?.url"
-        :key="streamId"
         :src="stream.url"
+        :next-src="nextStreamUrl"
+        :prev-src="prevStreamUrl"
         :title="streamName"
         :poster="streamIcon"
         :type="type"

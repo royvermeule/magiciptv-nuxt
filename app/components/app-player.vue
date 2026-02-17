@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { TextTrack } from "vidstack";
 import type { MediaPlayerElement } from "vidstack/elements";
 
 import "vidstack/player";
@@ -17,6 +16,8 @@ const props = defineProps<{
   episodeNumber?: number;
   hasPrevEpisode?: boolean;
   hasNextEpisode?: boolean;
+  nextSrc?: string | null;
+  prevSrc?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -38,38 +39,176 @@ const volume = ref(1);
 const isMuted = ref(false);
 const needsManualPlay = ref(false);
 let currentBlobUrl: string | null = null;
+const activeCueText = ref<string | null>(null);
 
-const proxiedSrc = computed(() => props.src);
+// use the DOM TextTrack (tracks from `el.textTracks`) — don't import
+// vidstack's internal TextTrack type which contains a private field
+// that makes assignments incompatible.
+// Minimal track shape used at runtime (covers vidstack/dom track wrappers).
+type PlayerTextTrack = {
+  id?: string;
+  kind?: string;
+  label?: string;
+  language?: string;
+  mode?: "disabled" | "hidden" | "showing";
+  cues?: {
+    length: number;
+    [index: number]: any;
+  } & Iterable<any> | null;
+  addEventListener?: (type: string, listener: EventListenerOrEventListenerObject) => void;
+  removeEventListener?: (type: string, listener: EventListenerOrEventListenerObject) => void;
+};
+
+let activeSubTrack: PlayerTextTrack | null = null;
+let activeSubTrackCueHandler: ((this: PlayerTextTrack, ev: Event) => void) | null = null;
+
+function updateActiveCueNow() {
+  activeCueText.value = null;
+  if (!activeSubTrack)
+    return;
+
+  const ct = player.value?.currentTime ?? currentTime.value;
+  if (!activeSubTrack.cues)
+    return;
+
+  let found: string | null = null;
+  for (let i = 0; i < activeSubTrack.cues.length; i++) {
+    const cue = activeSubTrack.cues[i] as any;
+    if (!cue)
+      continue;
+    if (ct >= cue.startTime && ct <= cue.endTime) {
+      const text = cue.text;
+      if (text)
+        found = found ? `${found}<br>${text}` : text;
+    }
+  }
+
+  activeCueText.value = found;
+}
+
+function setActiveSubTrack(track: PlayerTextTrack | null) {
+  try {
+    if (activeSubTrack && activeSubTrackCueHandler) {
+      activeSubTrack.removeEventListener?.("cuechange", activeSubTrackCueHandler as EventListener);
+    }
+  }
+  catch {
+    /* ignore */
+  }
+
+  activeSubTrack = track;
+  activeSubTrackCueHandler = null;
+
+  if (track) {
+    activeSubTrackCueHandler = function (this: PlayerTextTrack, ev: Event) {
+      void ev;
+      updateActiveCueNow();
+    };
+    try {
+      track.addEventListener?.("cuechange", activeSubTrackCueHandler as EventListener);
+    }
+    catch {
+      /* ignore */
+    }
+
+    // immediate update so the overlay reflects the current time
+    updateActiveCueNow();
+  }
+  else {
+    activeCueText.value = null;
+  }
+}
+
+const internalSrc = ref<string | null>(props.src ?? null);
+const proxiedSrc = computed(() => internalSrc.value);
 
 let hideTimer: ReturnType<typeof setTimeout>;
 let unsubscribe: (() => void) | undefined;
 
 const { startTracking, updateProgress, stopTracking } = useWatchHistory();
+const { consumeEnterPlayerFullscreen } = usePlayerIntent();
 
 const showSeek = computed(() => props.type === "movie" || props.type === "series");
 const isLive = computed(() => props.type === "live");
 
-function onFullscreenChange() {
-  isFullscreen.value = !!document.fullscreenElement;
-}
-
-function goBack() {
+async function goBack() {
   if (document.fullscreenElement) {
-    document.exitFullscreen().catch(() => {
-      isFullscreen.value = false;
-    });
+    try {
+      await document.exitFullscreen();
+    }
+    catch {
+      try {
+        (document as any).webkitExitFullscreen?.();
+      }
+      catch {
+        /* ignore */
+      }
+    }
+
+    const { exit } = useFullscreen();
+    await exit(500);
+    isFullscreen.value = !!document.fullscreenElement;
   }
+
   router.back();
 }
 
 function goPrevEpisode() {
   stopTracking();
+  if (props.hasPrevEpisode && props.prevSrc && player.value) {
+    internalSrc.value = props.prevSrc;
+    currentTime.value = 0;
+    duration.value = 0;
+    needsManualPlay.value = false;
+    try {
+      player.value.play().catch(() => {});
+    }
+    catch {
+      /* ignore */
+    }
+    const onCanPlayPrev = async () => {
+      try {
+        await player.value?.play();
+      }
+      catch {
+        /* ignore */
+      }
+    };
+    player.value?.addEventListener("can-play", onCanPlayPrev, { once: true });
+  }
   emit("prevEpisode");
   resetHideTimer();
 }
 
+function onFullscreenChange() {
+  isFullscreen.value = !!document.fullscreenElement;
+}
 function goNextEpisode() {
   stopTracking(true);
+  // if parent provided a prefetched next-src, switch immediately and play
+  if (props.hasNextEpisode && props.nextSrc && player.value) {
+    internalSrc.value = props.nextSrc;
+    currentTime.value = 0;
+    duration.value = 0;
+    needsManualPlay.value = false;
+    // try to play immediately (user gesture). also attach a can-play
+    // listener as a fallback in case the provider isn't ready yet.
+    try {
+      player.value.play().catch(() => {});
+    }
+    catch {
+      /* ignore */
+    }
+    const onCanPlayNext = async () => {
+      try {
+        await player.value?.play();
+      }
+      catch {
+        /* ignore */
+      }
+    };
+    player.value?.addEventListener("can-play", onCanPlayNext, { once: true });
+  }
   emit("nextEpisode");
   resetHideTimer();
 }
@@ -80,6 +219,78 @@ function manualPlay() {
   container.value?.requestFullscreen().catch(() => {
     isFullscreen.value = true;
   });
+}
+
+async function fetchOpenSubtitles() {
+  if (isLive.value || !props.title)
+    return;
+
+  const el = player.value;
+  if (!el)
+    return;
+
+  // Skip if the stream already provides subtitle tracks
+  const existing = [...el.textTracks].filter(t => t.kind === "subtitles" || t.kind === "captions");
+  if (existing.length > 0)
+    return;
+
+  // For series use the series name (not the episode title) for better search results
+  const searchTitle = (props.type === "series" && props.seriesName) ? props.seriesName : props.title;
+
+  const searchQuery: Record<string, string | number> = {
+    query: searchTitle,
+    type: props.type ?? "movie",
+  };
+  if (props.type === "series") {
+    if (props.seasonNumber)
+      searchQuery.seasonNumber = props.seasonNumber;
+    if (props.episodeNumber)
+      searchQuery.episodeNumber = props.episodeNumber;
+  }
+
+  const durationSec = Math.floor(el.duration || 0);
+
+  // Ask the server to pick the best candidate (server probes/caches
+  // subtitle metadata and returns a ranked list + confidence).
+  const bestResp = await $fetch<{
+    best: { fileId: number; language: string; label: string; score: number; coverage?: number } | null;
+    candidates: Array<{ fileId: number; language: string; label: string }>;
+    confidence?: "high" | "medium" | "low";
+    confidenceScore?: number;
+  }>(
+    "/api/subtitles/best",
+    { query: { ...searchQuery, duration: durationSec } },
+  ).catch(() => null);
+
+  if (!bestResp?.candidates?.length)
+    return;
+
+  // If the server is confident pick only the top candidate; otherwise
+  // add the full ranked list (best first) so the user can choose.
+  const highConfidence = bestResp.confidence === "high" || (bestResp.confidenceScore ?? 0) >= 0.6;
+
+  const toAdd = highConfidence ? [bestResp.best!] : bestResp.candidates;
+
+  for (const sub of toAdd) {
+    el.textTracks.add({
+      src: `/api/subtitles/download?fileId=${sub.fileId}`,
+      kind: "subtitles",
+      label: sub.label,
+      language: sub.language,
+      type: "vtt",
+    });
+  }
+
+  refreshSubtitleTracks();
+
+  if (highConfidence) {
+    try {
+      useToast().show(`Subtitles auto‑selected (${bestResp.best?.label})`);
+    }
+    catch {
+      /* ignore */
+    }
+  }
 }
 
 onMounted(() => {
@@ -94,6 +305,20 @@ onMounted(() => {
     volume.value = vol;
     isMuted.value = muted;
     updateProgress(ct, dur);
+
+    // Manually resolve active subtitle cue (use track timing)
+    if (activeSubTrack?.cues) {
+      const adjusted = ct;
+      let found: string | null = null;
+      for (const cue of activeSubTrack.cues) {
+        if (adjusted >= cue.startTime && adjusted <= cue.endTime) {
+          const text = (cue as any).text;
+          if (text)
+            found = found ? `${found}<br>${text}` : text;
+        }
+      }
+      activeCueText.value = found;
+    }
   });
 
   document.addEventListener("fullscreenchange", onFullscreenChange);
@@ -118,11 +343,10 @@ onMounted(() => {
 
   el.addEventListener("error", (ev: Event) => {
     const v = el.querySelector("video") as HTMLVideoElement | null;
-    console.warn("app-player: provider error", {
-      event: ev,
-      mediaError: v?.error ?? null,
-      src: props.src,
-    });
+    // provider error — intentionally not logging in production
+    void ev;
+    void v?.error;
+    void props.src;
   });
 
   el.addEventListener("can-play", async () => {
@@ -134,16 +358,64 @@ onMounted(() => {
         el.currentTime = progress.currentTime;
       }
     }
+
+    // Fetch subtitles from OpenSubtitles if stream has none
+    fetchOpenSubtitles();
+    // If navigation originated from a "play+fullscreen" gesture, try to
+    // transfer fullscreen to the player container here so the player UI
+    // itself becomes fullscreen (better UX than a random anchor element
+    // remaining fullscreen). Session flag is set by the pages that link
+    // into /hub/watch.
     try {
+      const enterFs = consumeEnterPlayerFullscreen();
+      if (enterFs) {
+        try {
+          await container.value?.requestFullscreen();
+        }
+        catch {
+          /* ignore */
+        }
+      }
+
       await el.play();
     }
     catch {
       needsManualPlay.value = true;
     }
   }, { once: true });
+
+  // subtitle offset persistence removed — external subtitle timing is used as-is
 });
 
-watch(() => props.src, () => {
+watch(() => props.src, (newSrc) => {
+  // if the player already has this source (we may have switched to a
+  // prefetched next/prev URL synchronously), avoid resetting/pausing
+  // the provider — let playback continue uninterrupted.
+  try {
+    const v = player.value?.querySelector("video") as HTMLVideoElement | null;
+    if ((v?.currentSrc && newSrc && v.currentSrc === newSrc) || internalSrc.value === newSrc) {
+      return;
+    }
+  }
+  catch {
+    /* ignore */
+  }
+
+  // keep internal src in sync with incoming prop
+  internalSrc.value = newSrc ?? null;
+  // If navigation carried an intent for the player to be fullscreen,
+  // transfer fullscreen to the player container when the source
+  // changes (covers the case where AppPlayer stays mounted across
+  // episode navigation).
+  try {
+    const enterFsNow = consumeEnterPlayerFullscreen();
+    if (enterFsNow) {
+      container.value?.requestFullscreen?.().catch(() => {});
+    }
+  }
+  catch {
+    /* ignore */
+  }
   const wasPlaying = isPlaying.value;
 
   currentTime.value = 0;
@@ -213,10 +485,20 @@ onUnmounted(() => {
   unsubscribe?.();
   clearTimeout(hideTimer);
   document.removeEventListener("fullscreenchange", onFullscreenChange);
+  // Ensure fullscreen is exited when the player is removed from the DOM
+  if (document.fullscreenElement) {
+    try {
+      document.exitFullscreen?.().catch(() => {});
+    }
+    catch {
+      /* ignore */
+    }
+  }
   if (currentBlobUrl) {
     URL.revokeObjectURL(currentBlobUrl);
     currentBlobUrl = null;
   }
+  setActiveSubTrack(null);
 });
 
 function seekBackward() {
@@ -299,7 +581,7 @@ type SubtitleTrack = {
   id: string;
   label: string;
   language: string;
-  track: TextTrack;
+  track: PlayerTextTrack;
 };
 
 const subtitleTracks = ref<SubtitleTrack[]>([]);
@@ -320,14 +602,21 @@ function refreshSubtitleTracks() {
         id: track.id || `${track.language}-${track.label}`,
         label: track.label || track.language || "Unknown",
         language: track.language || "",
-        track,
+        track: track as unknown as PlayerTextTrack,
       });
     }
   }
   subtitleTracks.value = tracks;
 
-  const active = tracks.find(t => t.track.mode === "showing");
+  // consider both `hidden` and `showing` as "selected" so our UI
+  // treats tracks that are loaded but rendered by the page (hidden)
+  // as active. We render cues in our own overlay and therefore set
+  // tracks to `hidden` when selected (prevents native rendering,
+  // enables cue access for our overlay rendering).
+  const active = tracks.find(t => t.track.mode === "showing" || t.track.mode === "hidden");
   activeSubtitleId.value = active?.id ?? null;
+  // ensure our activeSubTrack is kept in sync with the UI selection
+  setActiveSubTrack(active?.track ?? null);
 }
 
 function selectSubtitle(id: string | null) {
@@ -335,6 +624,9 @@ function selectSubtitle(id: string | null) {
   if (!el) {
     return;
   }
+
+  activeCueText.value = null;
+  setActiveSubTrack(null);
 
   for (const track of el.textTracks) {
     if (track.kind === "subtitles" || track.kind === "captions") {
@@ -345,14 +637,22 @@ function selectSubtitle(id: string | null) {
   if (id) {
     const selected = subtitleTracks.value.find(t => t.id === id);
     if (selected) {
-      selected.track.mode = "showing";
+      // keep the browser from drawing the native captions (we render
+      // them in our overlay)
+      selected.track.mode = "hidden";
+      setActiveSubTrack(selected.track);
     }
   }
-
+  // keep the current selection
   activeSubtitleId.value = id;
   subtitleMenuOpen.value = false;
   resetHideTimer();
 }
+
+// Subtitle sync/offset/persistence removed — selected external subtitle
+// files are authoritative. Manual sync UI and localStorage handling
+// were removed to avoid conflicting adjustments when multiple
+// candidate subtitle tracks are available.
 
 function toggleSubtitleMenu() {
   subtitleMenuOpen.value = !subtitleMenuOpen.value;
@@ -465,6 +765,9 @@ function formatTime(seconds: number) {
         <span class="text-sm text-white/80">Tap to play</span>
       </div>
     </div>
+
+    <!-- Subtitle overlay — above touch-capture (z-10), below controls (z-20) -->
+    <div v-if="activeCueText" class="subtitle-overlay" v-html="activeCueText" />
 
     <div
       class="touch-capture"
@@ -604,6 +907,7 @@ function formatTime(seconds: number) {
                     <Icon name="tabler:check" size="14" :class="activeSubtitleId === track.id ? 'opacity-100' : 'opacity-0'" />
                     {{ track.label }}
                   </button>
+                  <!-- subtitle sync controls removed: external subtitle files are authoritative -->
                 </template>
                 <span v-else class="block px-3 py-1.5 text-sm text-white/50">No subtitles available</span>
               </div>
@@ -645,8 +949,29 @@ function formatTime(seconds: number) {
   inset: 0;
   width: 100%;
   height: 100%;
-  z-index: 0;
   pointer-events: none;
+}
+
+/* Custom subtitle overlay — above touch-capture (z-10), below controls (z-20) */
+.subtitle-overlay {
+  position: absolute;
+  bottom: 12%;
+  left: 5%;
+  right: 5%;
+  z-index: 15;
+  text-align: center;
+  color: white;
+  font-size: clamp(14px, 2.5vw, 22px);
+  line-height: 1.4;
+  text-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.9),
+    0 0 2px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 4px 12px;
+  border-radius: 4px;
+  width: fit-content;
+  margin: 0 auto;
 }
 
 /* Always-on touch capture: sits between video (z-0) and controls (z-20).

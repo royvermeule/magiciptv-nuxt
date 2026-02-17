@@ -32,6 +32,30 @@ watch(seasons, (s) => {
 const episodes = computed(() => seriesInfo.value?.episodes[selectedSeason.value] ?? []);
 
 // restore default navigation behavior for episodes (remove prefetch/play-intent)
+
+// Navigate to the watch page while registering a transient intent for
+// the player to enter fullscreen. We perform the navigation ourselves
+// (instead of relying on NuxtLink's default) so we can call
+// requestFullscreen in the same user gesture without race conditions.
+const { requestEnterPlayerFullscreen } = usePlayerIntent();
+function navigateToWatch(e: MouseEvent, query: Record<string, any>) {
+  if (e.button !== 0)
+    return;
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+    const url = `/hub/watch?${new URLSearchParams(query).toString()}`;
+    window.open(url, "_blank");
+    return;
+  }
+
+  requestEnterPlayerFullscreen();
+  try {
+    document.documentElement.requestFullscreen?.().catch(() => {});
+  }
+  catch {
+    /* ignore */
+  }
+  navigateTo({ path: "/hub/watch", query });
+}
 </script>
 
 <template>
@@ -61,6 +85,7 @@ const episodes = computed(() => seriesInfo.value?.episodes[selectedSeason.value]
         <NuxtLink
           :to="{ path: '/hub/watch', query: { type: 'series', id: lastWatched.streamId, name: lastWatched.title, icon: seriesIcon, seriesId, seriesName, season: lastWatched.seasonNumber, episode: lastWatched.episodeNumber } }"
           class="flex items-center gap-3 rounded-lg bg-base-200 p-3 transition-colors hover:bg-base-300"
+          @click.prevent="navigateToWatch($event, { type: 'series', id: lastWatched.streamId, name: lastWatched.title, icon: seriesIcon, seriesId, seriesName, season: lastWatched.seasonNumber, episode: lastWatched.episodeNumber })"
         >
           <Icon name="tabler:player-play-filled" size="24" class="shrink-0 text-primary" />
           <div class="min-w-0 flex-1">
@@ -99,6 +124,7 @@ const episodes = computed(() => seriesInfo.value?.episodes[selectedSeason.value]
           :key="ep.id"
           :to="{ path: '/hub/watch', query: { type: 'series', id: ep.id, name: ep.title, icon: seriesIcon, ext: ep.container_extension, seriesId, seriesName, season: selectedSeason, episode: ep.episode_num } }"
           class="btn btn-ghost justify-start gap-3"
+          @click.prevent="navigateToWatch($event, { type: 'series', id: ep.id, name: ep.title, icon: seriesIcon, ext: ep.container_extension, seriesId, seriesName, season: selectedSeason, episode: ep.episode_num })"
         >
           <Icon name="tabler:player-play" size="18" />
           <span class="text-sm">E{{ ep.episode_num }} - {{ ep.title }}</span>

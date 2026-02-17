@@ -87,6 +87,26 @@ function timeAgo(date: string) {
 // restore simple navigation for history items (remove prefetch / global player)
 
 // (no local click handler; navigation handled by openStreamFromHistory)
+
+const { requestEnterPlayerFullscreen } = usePlayerIntent();
+function navigateToWatchFromHistory(e: MouseEvent, query: Record<string, any>) {
+  if (e.button !== 0)
+    return;
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+    const url = `/hub/watch?${new URLSearchParams(query).toString()}`;
+    window.open(url, "_blank");
+    return;
+  }
+
+  requestEnterPlayerFullscreen();
+  try {
+    document.documentElement.requestFullscreen?.().catch(() => {});
+  }
+  catch {
+    /* ignore */
+  }
+  navigateTo({ path: "/hub/watch", query });
+}
 </script>
 
 <template>
@@ -111,6 +131,7 @@ function timeAgo(date: string) {
         :key="item.id"
         :to="watchLink(item)"
         class="flex flex-wrap items-center gap-3 rounded-lg bg-base-100 p-3 transition-colors hover:bg-base-200 sm:flex-nowrap"
+        @click.prevent="navigateToWatchFromHistory($event, watchLink(item).query)"
       >
         <!-- Thumbnail -->
         <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded bg-base-200">
