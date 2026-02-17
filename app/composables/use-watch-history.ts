@@ -53,9 +53,17 @@ export function useWatchHistory() {
     }
   }
 
+  async function restoreProgress(streamId: number, type: "movie" | "series"): Promise<number> {
+    const progress = await $fetch<{ currentTime?: number }>("/api/watch-history/progress", {
+      query: { streamId, type },
+    }).catch(() => null);
+    return progress?.currentTime && progress.currentTime > 0 ? progress.currentTime : 0;
+  }
+
   return {
     startTracking,
     updateProgress,
     stopTracking,
+    restoreProgress,
   };
 }
