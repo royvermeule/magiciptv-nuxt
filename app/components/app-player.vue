@@ -40,6 +40,8 @@ const isMuted = ref(false);
 const needsManualPlay = ref(false);
 let currentBlobUrl: string | null = null;
 const activeCueText = ref<string | null>(null);
+// map label -> OpenSubtitles fileId for tracks added from /api/subtitles
+const subtitleLabelToFileId = new Map<string, number>();
 
 // use the DOM TextTrack (tracks from `el.textTracks`) — don't import
 // vidstack's internal TextTrack type which contains a private field
@@ -87,13 +89,8 @@ function updateActiveCueNow() {
 }
 
 function setActiveSubTrack(track: PlayerTextTrack | null) {
-  try {
-    if (activeSubTrack && activeSubTrackCueHandler) {
-      activeSubTrack.removeEventListener?.("cuechange", activeSubTrackCueHandler as EventListener);
-    }
-  }
-  catch {
-    /* ignore */
+  if (activeSubTrack && activeSubTrackCueHandler) {
+    activeSubTrack.removeEventListener?.("cuechange", activeSubTrackCueHandler as EventListener);
   }
 
   activeSubTrack = track;
@@ -104,12 +101,7 @@ function setActiveSubTrack(track: PlayerTextTrack | null) {
       void ev;
       updateActiveCueNow();
     };
-    try {
-      track.addEventListener?.("cuechange", activeSubTrackCueHandler as EventListener);
-    }
-    catch {
-      /* ignore */
-    }
+    track.addEventListener?.("cuechange", activeSubTrackCueHandler as EventListener);
 
     // immediate update so the overlay reflects the current time
     updateActiveCueNow();
@@ -117,6 +109,49 @@ function setActiveSubTrack(track: PlayerTextTrack | null) {
   else {
     activeCueText.value = null;
   }
+}
+
+/**
+ * Remove previously-added external subtitle <track> elements (those
+ * loaded from /api/subtitles/download) and clear associated state so
+ * a newly-loaded episode can fetch its own subtitle candidates.
+ */
+function clearExternalSubtitleTracks() {
+  const el = player.value;
+  if (!el)
+    return;
+
+  const v = el.querySelector("video") as HTMLVideoElement | null;
+  if (v) {
+    const tracks = Array.from(v.querySelectorAll("track"));
+    for (const t of tracks) {
+      const kind = t.kind || t.getAttribute("kind");
+      const src = t.src || t.getAttribute("src") || "";
+      if ((kind === "subtitles" || kind === "captions") && src.includes("/api/subtitles/download")) {
+        t.remove();
+      }
+    }
+  }
+
+  // Also remove tracks from vidstack's textTracks list (the source we
+  // actually use to build the subtitle menu). Prefer removing only the
+  // tracks that were added from our /api/subtitles endpoint; if the
+  // TextTrackList API supports `remove(track)` use that, otherwise
+  // fall back to `clear()` as a last resort.
+  const ttList: any = el.textTracks;
+  if (ttList && typeof ttList.remove === "function") {
+    for (const t of Array.from(el.textTracks as any)) {
+      const src = (t as any).src || "";
+      if (typeof src === "string" && src.includes("/api/subtitles/download")) {
+        ttList.remove(t);
+      }
+    }
+  }
+
+  // clear our helpers/state and update the UI
+  subtitleLabelToFileId.clear();
+  setActiveSubTrack(null);
+  refreshSubtitleTracks();
 }
 
 const internalSrc = ref<string | null>(props.src ?? null);
@@ -133,17 +168,8 @@ const isLive = computed(() => props.type === "live");
 
 async function goBack() {
   if (document.fullscreenElement) {
-    try {
-      await document.exitFullscreen();
-    }
-    catch {
-      try {
-        (document as any).webkitExitFullscreen?.();
-      }
-      catch {
-        /* ignore */
-      }
-    }
+    // prefer the standard API but fall back to vendor-prefixed exit
+    await document.exitFullscreen?.().catch(() => (document as any).webkitExitFullscreen?.());
 
     const { exit } = useFullscreen();
     await exit(500);
@@ -156,23 +182,19 @@ async function goBack() {
 function goPrevEpisode() {
   stopTracking();
   if (props.hasPrevEpisode && props.prevSrc && player.value) {
+    // remove any external subtitle tracks from the previous episode so
+    // the new episode can fetch its own candidates
+    clearExternalSubtitleTracks();
     internalSrc.value = props.prevSrc;
     currentTime.value = 0;
     duration.value = 0;
     needsManualPlay.value = false;
-    try {
+    if (player.value) {
       player.value.play().catch(() => {});
     }
-    catch {
-      /* ignore */
-    }
-    const onCanPlayPrev = async () => {
-      try {
-        await player.value?.play();
-      }
-      catch {
-        /* ignore */
-      }
+    const onCanPlayPrev = () => {
+      if (player.value)
+        player.value.play().catch(() => {});
     };
     player.value?.addEventListener("can-play", onCanPlayPrev, { once: true });
   }
@@ -187,25 +209,21 @@ function goNextEpisode() {
   stopTracking(true);
   // if parent provided a prefetched next-src, switch immediately and play
   if (props.hasNextEpisode && props.nextSrc && player.value) {
+    // remove subtitle tracks from the previous episode so they don't
+    // remain in the subtitle menu for the next episode
+    clearExternalSubtitleTracks();
     internalSrc.value = props.nextSrc;
     currentTime.value = 0;
     duration.value = 0;
     needsManualPlay.value = false;
     // try to play immediately (user gesture). also attach a can-play
     // listener as a fallback in case the provider isn't ready yet.
-    try {
+    if (player.value) {
       player.value.play().catch(() => {});
     }
-    catch {
-      /* ignore */
-    }
-    const onCanPlayNext = async () => {
-      try {
-        await player.value?.play();
-      }
-      catch {
-        /* ignore */
-      }
+    const onCanPlayNext = () => {
+      if (player.value)
+        player.value.play().catch(() => {});
     };
     player.value?.addEventListener("can-play", onCanPlayNext, { once: true });
   }
@@ -231,8 +249,24 @@ async function fetchOpenSubtitles() {
 
   // Skip if the stream already provides subtitle tracks
   const existing = [...el.textTracks].filter(t => t.kind === "subtitles" || t.kind === "captions");
-  if (existing.length > 0)
+  if (import.meta.env.DEV) {
+    console.warn("fetchOpenSubtitles — existing textTracks:", existing.map((t: any) => ({ id: t.id, label: t.label, src: t.src || null, cues: t.cues?.length ?? 0 })));
+  }
+
+  // If there's at least one *valid* subtitle/caption track (has a
+  // src or loaded cues) assume the provider supplied subtitles and
+  // don't fetch. If tracks exist but have no src/cues (stale or
+  // placeholder entries), proceed to fetch candidates.
+  const hasValidTrack = existing.some((t: any) => {
+    const src = (t as any).src || "";
+    const cues = (t as any).cues;
+    return (typeof src === "string" && src.trim() !== "") || (cues && cues.length > 0);
+  });
+  if (existing.length > 0 && hasValidTrack) {
+    if (import.meta.env.DEV)
+      console.warn("fetchOpenSubtitles — skipping because provider/subtitles already present");
     return;
+  }
 
   // For series use the series name (not the episode title) for better search results
   const searchTitle = (props.type === "series" && props.seriesName) ? props.seriesName : props.title;
@@ -252,51 +286,75 @@ async function fetchOpenSubtitles() {
 
   // Ask the server to pick the best candidate (server probes/caches
   // subtitle metadata and returns a ranked list + confidence).
-  const bestResp = await $fetch<{
-    best: { fileId: number; language: string; label: string; score: number; coverage?: number } | null;
-    candidates: Array<{ fileId: number; language: string; label: string }>;
-    confidence?: "high" | "medium" | "low";
-    confidenceScore?: number;
-  }>(
-    "/api/subtitles/best",
-    { query: { ...searchQuery, duration: durationSec } },
-  ).catch(() => null);
+  // Try server-side best-candidate selection first. If it fails or
+  // returns no candidates, fall back to the legacy /search flow so the
+  // UI still shows subtitle options.
+  const bestResp = await $fetch<any>("/api/subtitles/best", { query: { ...searchQuery, duration: durationSec } }).catch(() => null);
 
-  if (!bestResp?.candidates?.length)
+  if (bestResp && Array.isArray(bestResp.candidates) && bestResp.candidates.length > 0) {
+    const highConfidence = bestResp.confidence === "high" || ((bestResp.best?.coverage ?? 0) >= 0.8 && !bestResp.best?.isOutlier && bestResp.best?.verifiable) || (bestResp.confidenceScore ?? 0) >= 0.55;
+
+    // Prefer verifiable, non-outlier candidates only. If the server
+    // returned any verifiable candidates we will show only those.
+    const verifiableCandidates = (bestResp.candidates ?? []).filter((c: any) => !c.isOutlier && Boolean(c.verifiable));
+    if (verifiableCandidates.length > 0) {
+      const toAdd = (bestResp.best && bestResp.best.verifiable) ? [bestResp.best] : verifiableCandidates;
+      for (const sub of toAdd) {
+        const label = sub.label;
+        el.textTracks.add({ src: `/api/subtitles/download?fileId=${sub.fileId}`, kind: "subtitles", label, language: sub.language, type: "vtt" });
+        subtitleLabelToFileId.set(label, sub.fileId);
+      }
+      refreshSubtitleTracks();
+      if (highConfidence && bestResp.best?.verifiable) {
+        useToast().show(`Subtitles auto‑selected (${bestResp.best?.label})`);
+      }
+      return;
+    }
+
+    // No verifiable candidates found — expose the full list of
+    // returned candidates (marked "unverified") so the user can
+    // manually pick the subtitle that actually matches their stream.
+    const candidates = bestResp.candidates ?? [];
+    for (const c of candidates) {
+      const label = `${c.label}${c.verifiable ? "" : " (unverified)"}`;
+      el.textTracks.add({ src: `/api/subtitles/download?fileId=${c.fileId}`, kind: "subtitles", label, language: c.language, type: "vtt" });
+    }
+    refreshSubtitleTracks();
+    useToast().show("Showing unverified subtitle candidates — pick one to try");
     return;
-
-  // If the server is confident pick only the top candidate; otherwise
-  // add the full ranked list (best first) so the user can choose.
-  const highConfidence = bestResp.confidence === "high" || (bestResp.confidenceScore ?? 0) >= 0.6;
-
-  const toAdd = highConfidence ? [bestResp.best!] : bestResp.candidates;
-
-  for (const sub of toAdd) {
-    el.textTracks.add({
-      src: `/api/subtitles/download?fileId=${sub.fileId}`,
-      kind: "subtitles",
-      label: sub.label,
-      language: sub.language,
-      type: "vtt",
-    });
   }
 
+  // Fallback: call the original search endpoint and add returned candidates
+  const legacy = await $fetch<{ fileId: number; language: string; label: string }[]>("/api/subtitles/search", { query: searchQuery }).catch(() => null);
+  if (!legacy || !legacy.length)
+    return;
+  for (const sub of legacy) {
+    el.textTracks.add({ src: `/api/subtitles/download?fileId=${sub.fileId}`, kind: "subtitles", label: sub.label, language: sub.language, type: "vtt" });
+  }
   refreshSubtitleTracks();
-
-  if (highConfidence) {
-    try {
-      useToast().show(`Subtitles auto‑selected (${bestResp.best?.label})`);
-    }
-    catch {
-      /* ignore */
-    }
-  }
 }
 
 onMounted(() => {
   const el = player.value;
   if (!el)
     return;
+
+  // Ensure the video element is constrained to the container so it
+  // letterboxes instead of overflowing/cropping on non-16:9 screens.
+  const applyVideoFit = () => {
+    const v = el.querySelector("video");
+    if (v) {
+      v.style.setProperty("max-width", "100%", "important");
+      v.style.setProperty("max-height", "100%", "important");
+      v.style.setProperty("width", "100%", "important");
+      v.style.setProperty("height", "100%", "important");
+      v.style.setProperty("object-fit", "contain", "important");
+    }
+  };
+  applyVideoFit();
+  const observer = new MutationObserver(applyVideoFit);
+  observer.observe(el, { childList: true, subtree: true });
+  onUnmounted(() => observer.disconnect());
 
   unsubscribe = el.subscribe(({ paused, currentTime: ct, duration: dur, volume: vol, muted }) => {
     isPlaying.value = !paused;
@@ -360,23 +418,21 @@ onMounted(() => {
     }
 
     // Fetch subtitles from OpenSubtitles if stream has none
+    // ensure any stale external tracks are removed before fetching
+    // candidates for the newly-loaded media
+    clearExternalSubtitleTracks();
     fetchOpenSubtitles();
     // If navigation originated from a "play+fullscreen" gesture, try to
     // transfer fullscreen to the player container here so the player UI
     // itself becomes fullscreen (better UX than a random anchor element
     // remaining fullscreen). Session flag is set by the pages that link
     // into /hub/watch.
-    try {
-      const enterFs = consumeEnterPlayerFullscreen();
-      if (enterFs) {
-        try {
-          await container.value?.requestFullscreen();
-        }
-        catch {
-          /* ignore */
-        }
-      }
+    const enterFs = consumeEnterPlayerFullscreen();
+    if (enterFs) {
+      await container.value?.requestFullscreen?.().catch(() => {});
+    }
 
+    try {
       await el.play();
     }
     catch {
@@ -391,30 +447,23 @@ watch(() => props.src, (newSrc) => {
   // if the player already has this source (we may have switched to a
   // prefetched next/prev URL synchronously), avoid resetting/pausing
   // the provider — let playback continue uninterrupted.
-  try {
-    const v = player.value?.querySelector("video") as HTMLVideoElement | null;
-    if ((v?.currentSrc && newSrc && v.currentSrc === newSrc) || internalSrc.value === newSrc) {
-      return;
-    }
-  }
-  catch {
-    /* ignore */
+  const v = player.value?.querySelector("video") as HTMLVideoElement | null;
+  if ((v?.currentSrc && newSrc && v.currentSrc === newSrc) || internalSrc.value === newSrc) {
+    return;
   }
 
   // keep internal src in sync with incoming prop
   internalSrc.value = newSrc ?? null;
+  // ensure any external subtitle tracks from the previous media are removed
+  // so fetchOpenSubtitles() can run for the newly loaded source.
+  clearExternalSubtitleTracks();
   // If navigation carried an intent for the player to be fullscreen,
   // transfer fullscreen to the player container when the source
   // changes (covers the case where AppPlayer stays mounted across
   // episode navigation).
-  try {
-    const enterFsNow = consumeEnterPlayerFullscreen();
-    if (enterFsNow) {
-      container.value?.requestFullscreen?.().catch(() => {});
-    }
-  }
-  catch {
-    /* ignore */
+  const enterFsNow = consumeEnterPlayerFullscreen();
+  if (enterFsNow) {
+    container.value?.requestFullscreen?.().catch(() => {});
   }
   const wasPlaying = isPlaying.value;
 
@@ -427,13 +476,36 @@ watch(() => props.src, (newSrc) => {
   }
 
   if (player.value) {
-    try {
-      player.value.pause();
-      player.value.currentTime = 0;
-    }
-    catch {
-      /* ignore */
-    }
+    player.value.pause();
+    player.value.currentTime = 0;
+
+    // Ensure we restore any saved progress and fetch subtitles for the
+    // newly-loaded source once the provider is ready to play.
+    const onCanPlayForNewSrc = async () => {
+      if (props.streamId && !isLive.value) {
+        const progress = await $fetch("/api/watch-history/progress", {
+          query: { streamId: props.streamId, type: props.type },
+        }).catch(() => null);
+        if (progress?.currentTime && progress.currentTime > 0 && player.value) {
+          player.value.currentTime = progress.currentTime;
+        }
+      }
+
+      // attempt to fetch external subtitles for the new media
+      fetchOpenSubtitles();
+    };
+    player.value?.addEventListener("can-play", onCanPlayForNewSrc, { once: true });
+
+    // If the provider hasn't fired `can-play` yet but there are no
+    // subtitle tracks available, try fetching candidates now as a
+    // best-effort (the can-play listener will also run once the
+    // provider is ready). This prevents a briefly-empty menu when the
+    // provider's events happen slightly out-of-order.
+    Promise.resolve().then(() => {
+      const existing = [...(player.value?.textTracks ?? [])].filter((t: any) => t.kind === "subtitles" || t.kind === "captions");
+      if (existing.length === 0)
+        fetchOpenSubtitles();
+    });
 
     const shouldAutoPlay = wasPlaying;
     if (shouldAutoPlay) {
@@ -478,6 +550,31 @@ watch(() => props.streamId, (id) => {
       episodeNumber: props.episodeNumber,
     });
   }
+
+  // After the parent updates the streamId (page navigation), ensure
+  // subtitle tracks are refreshed for the newly-selected episode.
+  // If the provider isn't ready yet, attach a one-time can-play
+  // listener; otherwise try a best-effort fetch immediately.
+  clearExternalSubtitleTracks();
+  const el = player.value;
+  if (el) {
+    const existing = [...(el.textTracks ?? [])].filter((t: any) => t.kind === "subtitles" || t.kind === "captions");
+    const hasValid = existing.some((t: any) => {
+      const src = t.src || "";
+      const cues = t.cues;
+      return (typeof src === "string" && src.trim() !== "") || (cues && cues.length > 0);
+    });
+
+    const runFetch = () => fetchOpenSubtitles();
+
+    if (!hasValid) {
+      // provider hasn't supplied subtitles for the new media yet —
+      // fetch candidates now and again once the provider signals
+      // readiness.
+      runFetch();
+      el.addEventListener("can-play", runFetch, { once: true });
+    }
+  }
 });
 
 onUnmounted(() => {
@@ -487,12 +584,7 @@ onUnmounted(() => {
   document.removeEventListener("fullscreenchange", onFullscreenChange);
   // Ensure fullscreen is exited when the player is removed from the DOM
   if (document.fullscreenElement) {
-    try {
-      document.exitFullscreen?.().catch(() => {});
-    }
-    catch {
-      /* ignore */
-    }
+    document.exitFullscreen();
   }
   if (currentBlobUrl) {
     URL.revokeObjectURL(currentBlobUrl);
@@ -588,6 +680,7 @@ const subtitleTracks = ref<SubtitleTrack[]>([]);
 const activeSubtitleId = ref<string | null>(null);
 const subtitleMenuOpen = ref(false);
 const showSubtitles = computed(() => !isLive.value);
+// (fileId is parsed from the added <track> src when needed)
 
 function refreshSubtitleTracks() {
   const el = player.value;
@@ -950,6 +1043,9 @@ function formatTime(seconds: number) {
   width: 100%;
   height: 100%;
   pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Custom subtitle overlay — above touch-capture (z-10), below controls (z-20) */

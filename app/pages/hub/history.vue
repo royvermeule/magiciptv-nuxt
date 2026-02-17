@@ -184,7 +184,7 @@ function navigateToWatchFromHistory(e: MouseEvent, query: Record<string, any>) {
           </NuxtLink>
           <button
             class="btn btn-circle btn-ghost btn-sm text-base-content/30 hover:text-error"
-            @click.prevent="confirmDelete(item.id)"
+            @click.stop.prevent="confirmDelete(item.id)"
           >
             <Icon name="tabler:trash" size="22" />
           </button>

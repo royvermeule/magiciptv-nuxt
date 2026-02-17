@@ -105,6 +105,97 @@ export default defineEventHandler(async (event) => {
     { query: { fileId: p.fileId } },
   ).catch(() => null)));
 
+  // Fetch small text samples for each probed file so we can do
+  // cross-candidate textual similarity checks (helps detect wrong
+  // or out-of-sync subtitle files). Limit to top 4 content probes to
+  // avoid extra API pressure.
+  const contentProbe = probe.slice(0, 4);
+  const samples = await Promise.all(contentProbe.map(async (p) => {
+    try {
+      const vtt = await $fetch<string>(`/api/subtitles/download?fileId=${p.fileId}`);
+      return { fileId: p.fileId, vtt };
+    }
+    catch {
+      return { fileId: p.fileId, vtt: null };
+    }
+  }));
+
+  function extractCueTexts(vtt?: string | null) {
+    if (!vtt)
+      return [] as string[];
+    // crude VTT/SRT cue text extractor: capture lines that are not timestamps
+    const lines = vtt.split(/\r?\n/);
+    const cueTexts: string[] = [];
+    const timestampRe = /\d{1,2}:\d{2}:\d{2}[.,]\d{1,3}\s*-->/;
+    let buffer = [] as string[];
+    for (const ln of lines) {
+      if (timestampRe.test(ln)) {
+        if (buffer.length) {
+          cueTexts.push(buffer.join(" ").trim());
+          buffer = [];
+        }
+        continue;
+      }
+      // skip WEBVTT header and cue-sequence numbers
+      if (!ln || ln.startsWith("WEBVTT") || /^\d+$/.test(ln)) {
+        continue;
+      }
+      buffer.push(ln.replace(/<[^>]+>/g, ""));
+    }
+    if (buffer.length)
+      cueTexts.push(buffer.join(" ").trim());
+    return cueTexts.filter(Boolean);
+  }
+
+  const tokenSets: Record<number, Set<string>> = {};
+  const verifiable: Record<number, boolean> = {};
+  for (const s of samples) {
+    const texts = extractCueTexts(s.vtt);
+    // sample up to 12 cues distributed across file
+    const picks: string[] = [];
+    if (texts.length <= 12) {
+      picks.push(...texts);
+    }
+    else {
+      const step = Math.max(1, Math.floor(texts.length / 12));
+      for (let i = 0; i < texts.length; i += step) {
+        const t = texts[i];
+        if (t)
+          picks.push(t);
+        if (picks.length >= 12)
+          break;
+      }
+    }
+    const tokens = new Set<string>();
+    for (const t of picks) {
+      t.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).forEach((w) => {
+        if (w.length >= 3 && !/^\d+$/.test(w))
+          tokens.add(w);
+      });
+    }
+    tokenSets[s.fileId] = tokens;
+    verifiable[s.fileId] = Boolean(s.vtt);
+  }
+  // mark remaining probed files as not verifiable (we didn't fetch their text)
+  for (const p of probe) {
+    if (verifiable[p.fileId] === undefined)
+      verifiable[p.fileId] = false;
+  }
+
+  function jaccard(a: Set<string>, b: Set<string>) {
+    if (!a || !b || a.size === 0 || b.size === 0) {
+      return 0;
+    }
+    let inter = 0;
+    for (const x of a) {
+      if (b.has(x)) {
+        inter++;
+      }
+    }
+    const uni = new Set<string>([...a, ...b]).size;
+    return uni === 0 ? 0 : inter / uni;
+  }
+
   const durationSec = durNum || 0;
   const scored: Array<any> = [];
   for (let i = 0; i < probe.length; i++) {
@@ -135,6 +226,37 @@ export default defineEventHandler(async (event) => {
     if (durationSec > 0 && Math.abs(durationSec - last) <= 20)
       score += 5;
 
+    // similarity against other probed candidates (content consensus)
+    const tokens = tokenSets[meta.fileId] ?? new Set<string>();
+    const isVerifiable = Boolean(verifiable[meta.fileId]);
+    let avgSim = 0;
+    let simCount = 0;
+    if (isVerifiable) {
+      for (const other of probe) {
+        if (other.fileId === meta.fileId)
+          continue;
+        if (!verifiable[other.fileId])
+          continue; // only compare against verifiable peers
+        const otherTokens = tokenSets[other.fileId] ?? new Set<string>();
+        const s = jaccard(tokens, otherTokens);
+        if (s > 0) {
+          avgSim += s;
+          simCount++;
+        }
+      }
+      if (simCount > 0)
+        avgSim = avgSim / simCount;
+    }
+
+    // boost score if candidate text is similar to peers; heavily penalize
+    // true outliers (verifiable but dissimilar). Do NOT mark non-
+    // verifiable files as outliers — treat them as "unverified".
+    const similarityBonus = avgSim * 20;
+    score += similarityBonus;
+    const isOutlier = isVerifiable ? (simCount === 0 || avgSim < 0.12) : false;
+    if (isOutlier)
+      score -= 45;
+
     scored.push({
       ...meta,
       fileName: meta.fileName,
@@ -146,6 +268,9 @@ export default defineEventHandler(async (event) => {
       cueDensity,
       downloads,
       score,
+      avgSim: Math.round((avgSim || 0) * 100) / 100,
+      isOutlier: Boolean(isOutlier),
+      verifiable: Boolean(isVerifiable),
     });
   }
 
@@ -163,18 +288,33 @@ export default defineEventHandler(async (event) => {
   const second = scored[1] ?? { score: 0 };
   const scoreDelta = best.score - second.score;
 
-  // Confidence heuristics
+  // Confidence heuristics — more permissive so the server can reliably
+  // auto-select a single candidate when coverage is good.
   let confidence: "high" | "medium" | "low" = "low";
-  if ((best.coverage >= 0.9 && scoreDelta >= 8) || (best.coverage >= 0.95)) {
+  if (best.coverage >= 0.95 || (best.coverage >= 0.8 && scoreDelta >= 4) || (best.coverage >= 0.85 && scoreDelta >= 2)) {
     confidence = "high";
   }
-  else if ((best.coverage >= 0.8 && scoreDelta >= 6) || (best.coverage >= 0.85 && scoreDelta >= 4)) {
+  else if (best.coverage >= 0.65 || scoreDelta >= 3) {
     confidence = "medium";
   }
 
   const numericConfidence = Math.max(0, Math.min(1, (scoreDelta / 30) * 0.7 + best.coverage * 0.3));
 
-  const candidatesOut = scored.map(s => ({ fileId: s.fileId, language: s.language, label: s.label, score: s.score, coverage: s.coverage, cues: s.cues, first: s.first, last: s.last, downloads: s.downloads, release: s.release }));
+  const candidatesOut = scored.map(s => ({
+    fileId: s.fileId,
+    language: s.language,
+    label: s.label,
+    score: s.score,
+    coverage: s.coverage,
+    cues: s.cues,
+    first: s.first,
+    last: s.last,
+    downloads: s.downloads,
+    release: s.release,
+    avgSim: s.avgSim ?? 0,
+    isOutlier: Boolean(s.isOutlier),
+    verifiable: Boolean((s as any).verifiable),
+  }));
 
   const out = {
     best: candidatesOut[0] ?? null,
