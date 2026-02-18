@@ -43,7 +43,7 @@ function formatTime(seconds: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function watchLink(item: { streamId: number; type: string; title: string; icon: string | null; seriesName: string | null; seriesId: number | null; seasonNumber: string | null; episodeNumber: number | null }) {
+function watchLink(item: { streamId: number; type: string; title: string; icon: string | null; seriesName: string | null; seriesId: number | null; seasonNumber: string | null; episodeNumber: number | null; containerExtension?: string | null }) {
   if (item.type === "series" && item.seriesId) {
     return {
       path: "/hub/watch",
@@ -52,6 +52,7 @@ function watchLink(item: { streamId: number; type: string; title: string; icon: 
         id: item.streamId,
         name: item.title,
         icon: item.icon ?? undefined,
+        ext: item.containerExtension ?? undefined,
         seriesName: item.seriesName ?? undefined,
         seriesId: item.seriesId,
         season: item.seasonNumber ?? undefined,
@@ -66,6 +67,7 @@ function watchLink(item: { streamId: number; type: string; title: string; icon: 
       id: item.streamId,
       name: item.title,
       icon: item.icon ?? undefined,
+      ext: item.containerExtension ?? undefined,
     },
   };
 }

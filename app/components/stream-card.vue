@@ -5,6 +5,7 @@ const props = defineProps<{
   icon?: string;
   type: "live" | "movie" | "series";
   fallbackIcon?: string;
+  ext?: string;
 }>();
 
 const { favorites, isFavorited, toggleFavorite, folders, addToFolder, getFavoriteFolderId, moveToFolder } = useFavorites();
@@ -19,7 +20,7 @@ const linkTo = computed(() => {
   if (props.type === "series") {
     return { path: `/hub/series/${props.streamId}`, query: { name: props.name, icon: props.icon } };
   }
-  return { path: "/hub/watch", query: { type: props.type, id: props.streamId, name: props.name, icon: props.icon } };
+  return { path: "/hub/watch", query: { type: props.type, id: props.streamId, name: props.name, icon: props.icon, ...(props.ext && { ext: props.ext }) } };
 });
 
 // ...existing code...

@@ -16,6 +16,17 @@ const { data: seriesInfo, status } = useFetch<{
 
 const { data: lastWatched, refresh: refreshLastWatched } = useFetch(`/api/watch-history/series/${seriesId}`, { lazy: true });
 
+const lastWatchedExt = computed(() => {
+  if (!lastWatched.value || !seriesInfo.value)
+    return undefined;
+  for (const eps of Object.values(seriesInfo.value.episodes)) {
+    const ep = eps.find(e => String(e.id) === String(lastWatched.value!.streamId));
+    if (ep)
+      return ep.container_extension;
+  }
+  return undefined;
+});
+
 onMounted(() => {
   refreshLastWatched();
 });
@@ -83,9 +94,9 @@ function navigateToWatch(e: MouseEvent, query: Record<string, any>) {
           Continue watching
         </h3>
         <NuxtLink
-          :to="{ path: '/hub/watch', query: { type: 'series', id: lastWatched.streamId, name: lastWatched.title, icon: seriesIcon, seriesId, seriesName, season: lastWatched.seasonNumber, episode: lastWatched.episodeNumber } }"
+          :to="{ path: '/hub/watch', query: { type: 'series', id: lastWatched.streamId, name: lastWatched.title, icon: seriesIcon, ext: lastWatchedExt, seriesId, seriesName, season: lastWatched.seasonNumber, episode: lastWatched.episodeNumber } }"
           class="flex items-center gap-3 rounded-lg bg-base-200 p-3 transition-colors hover:bg-base-300"
-          @click.prevent="navigateToWatch($event, { type: 'series', id: lastWatched.streamId, name: lastWatched.title, icon: seriesIcon, seriesId, seriesName, season: lastWatched.seasonNumber, episode: lastWatched.episodeNumber })"
+          @click.prevent="navigateToWatch($event, { type: 'series', id: lastWatched.streamId, name: lastWatched.title, icon: seriesIcon, ext: lastWatchedExt, seriesId, seriesName, season: lastWatched.seasonNumber, episode: lastWatched.episodeNumber })"
         >
           <Icon name="tabler:player-play-filled" size="24" class="shrink-0 text-primary" />
           <div class="min-w-0 flex-1">

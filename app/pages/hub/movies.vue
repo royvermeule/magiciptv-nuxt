@@ -98,6 +98,7 @@ watch(searchQuery, async (query) => {
             :stream-id="stream.stream_id"
             :name="stream.name"
             :icon="stream.stream_icon"
+            :ext="stream.container_extension"
             type="movie"
             fallback-icon="tabler:movie"
           />

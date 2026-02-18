@@ -83,6 +83,6 @@ export async function getXtreamCredentials(event: H3Event) {
   return {
     xtreamUsername: profile.xtreamUsername,
     xtreamPassword: profile.xtreamPassword,
-    xtreamUrl: profile.xtreamUrl,
+    xtreamUrl: profile.xtreamUrl.replace(/\/+$/, ""),
   };
 }

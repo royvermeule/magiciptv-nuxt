@@ -14,6 +14,7 @@ const props = defineProps<{
   seriesId?: number;
   seasonNumber?: string;
   episodeNumber?: number;
+  containerExtension?: string;
   hasPrevEpisode?: boolean;
   hasNextEpisode?: boolean;
   nextSrc?: string | null;
@@ -35,7 +36,21 @@ let currentBlobUrl: string | null = null;
 let unsubscribe: (() => void) | undefined;
 
 const internalSrc = ref<string | null>(props.src ?? null);
-const proxiedSrc = computed(() => internalSrc.value);
+
+const proxiedSrc = computed(() => {
+  const src = internalSrc.value;
+  if (!src)
+    return null;
+  // Live → HLS.js (uses fetch internally, needs CORS — stays proxied)
+  if (props.type === "live") {
+    return { src, type: "application/x-mpegURL" };
+  }
+  // Movies/series → native <video> element. Provide video/mp4 so Vidstack
+  // picks the native video provider immediately without a HEAD probe.
+  // The proxy issues a 302 redirect to the IPTV URL for GET requests,
+  // so the browser streams directly (no CORS enforcement on <video> src).
+  return { src, type: "video/mp4" };
+});
 
 const showSeek = computed(() => props.type === "movie" || props.type === "series");
 const isLive = computed(() => props.type === "live");
@@ -74,6 +89,9 @@ const onSeekEnd = seek.onSeekEnd;
 
 const vol = useVolume(player, resetHideTimer);
 const { volume, isMuted, volumeIcon, volumeProgress, toggleMute, onVolumeInput, setVolumeState } = vol;
+// ensure video element is sized correctly and kept in sync when providers change
+useVideoFit(player);
+const { manualPlay, togglePlay } = usePlayerActions(player, container, isFullscreen, needsManualPlay, resetHideTimer);
 
 // Thin wrappers for subtitle actions that also reset the hide timer
 function toggleSubtitleMenu() {
@@ -119,18 +137,60 @@ async function goBack() {
   router.back();
 }
 
+// Shared helper to switch the internal source and perform the
+// common reset/play work that prev/next and other navigations use.
+function setInternalSource(src: string | null, autoplay = true) {
+  clearExternalSubtitleTracks();
+  internalSrc.value = src;
+  resetPlaybackState();
+
+  if (!player.value)
+    return;
+
+  player.value.pause();
+  player.value.currentTime = 0;
+
+  if (autoplay) {
+    void safePlay(player.value);
+    player.value.addEventListener("can-play", () => void safePlay(player.value), { once: true });
+  }
+}
+
+function resetPlaybackState() {
+  currentTime.value = 0;
+  duration.value = 0;
+  needsManualPlay.value = false;
+  if (currentBlobUrl) {
+    URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = null;
+  }
+}
+
+// attempt to play a player instance without throwing; returns true
+// when playback starts, false otherwise.
+async function safePlay(p?: MediaPlayerElement | null) {
+  const el = p ?? player.value;
+  if (!el)
+    return false;
+  try {
+    await el.play();
+    return true;
+  }
+  catch {
+    return false;
+  }
+}
+
+async function ensureEnterPlayerFullscreenIfNeeded() {
+  const enterFs = consumeEnterPlayerFullscreen();
+  if (enterFs)
+    await container.value?.requestFullscreen?.().catch(() => {});
+}
+
 function goPrevEpisode() {
   stopTracking();
   if (props.hasPrevEpisode && props.prevSrc && player.value) {
-    clearExternalSubtitleTracks();
-    internalSrc.value = props.prevSrc;
-    currentTime.value = 0;
-    duration.value = 0;
-    needsManualPlay.value = false;
-    player.value.play().catch(() => {});
-    player.value.addEventListener("can-play", () => {
-      player.value?.play().catch(() => {});
-    }, { once: true });
+    setInternalSource(props.prevSrc);
   }
   emit("prevEpisode");
   resetHideTimer();
@@ -139,69 +199,40 @@ function goPrevEpisode() {
 function goNextEpisode() {
   stopTracking(true);
   if (props.hasNextEpisode && props.nextSrc && player.value) {
-    clearExternalSubtitleTracks();
-    internalSrc.value = props.nextSrc;
-    currentTime.value = 0;
-    duration.value = 0;
-    needsManualPlay.value = false;
-    player.value.play().catch(() => {});
-    player.value.addEventListener("can-play", () => {
-      player.value?.play().catch(() => {});
-    }, { once: true });
+    setInternalSource(props.nextSrc);
   }
   emit("nextEpisode");
   resetHideTimer();
 }
 
-function manualPlay() {
-  needsManualPlay.value = false;
-  player.value?.play();
-  container.value?.requestFullscreen().catch(() => {
-    isFullscreen.value = true;
-  });
-}
-
-function togglePlay() {
-  if (!player.value)
-    return;
-  if (player.value.paused) {
-    player.value.play().catch(() => {});
-    if (!document.fullscreenElement)
-      container.value?.requestFullscreen().catch(() => {});
-  }
-  else {
-    player.value.pause();
-  }
-  resetHideTimer();
-}
+// manualPlay/togglePlay provided by usePlayerActions
 
 // --- lifecycle ---
+function handlePlayerUpdate({ paused, currentTime: ct, duration: dur, volume: v, muted }: any) {
+  isPlaying.value = !paused;
+  setTime(ct, dur);
+  setVolumeState(v, muted);
+  updateProgress(ct, dur);
+  subtitles.onTimeUpdate(ct);
+}
+
+function onPlayerError(ev: Event) {
+  const v = player.value?.querySelector("video") as HTMLVideoElement | null;
+  // provider error — intentionally not logging in production
+  void ev;
+  void v?.error;
+  void props.src;
+}
+
 onMounted(() => {
   const el = player.value;
   if (!el)
     return;
 
-  const applyVideoFit = () => {
-    const v = el.querySelector("video");
-    if (v) {
-      v.style.setProperty("max-width", "100%", "important");
-      v.style.setProperty("max-height", "100%", "important");
-      v.style.setProperty("width", "100%", "important");
-      v.style.setProperty("height", "100%", "important");
-      v.style.setProperty("object-fit", "contain", "important");
-    }
-  };
-  applyVideoFit();
-  const observer = new MutationObserver(applyVideoFit);
-  observer.observe(el, { childList: true, subtree: true });
-  onUnmounted(() => observer.disconnect());
+  // video fit handled by useVideoFit(player)
 
   unsubscribe = el.subscribe(({ paused, currentTime: ct, duration: dur, volume: v, muted }) => {
-    isPlaying.value = !paused;
-    setTime(ct, dur);
-    setVolumeState(v, muted);
-    updateProgress(ct, dur);
-    subtitles.onTimeUpdate(ct);
+    handlePlayerUpdate({ paused, currentTime: ct, duration: dur, volume: v, muted });
   });
 
   document.addEventListener("fullscreenchange", onFullscreenChange);
@@ -217,16 +248,13 @@ onMounted(() => {
       seriesId: props.seriesId,
       seasonNumber: props.seasonNumber,
       episodeNumber: props.episodeNumber,
+      containerExtension: props.containerExtension,
     });
   }
 
   setupTrackListeners();
 
-  el.addEventListener("error", (ev: Event) => {
-    void ev;
-    void (el.querySelector("video") as HTMLVideoElement | null)?.error;
-    void props.src;
-  });
+  el.addEventListener("error", onPlayerError);
 
   el.addEventListener("can-play", async () => {
     if (props.streamId && !isLive.value) {
@@ -236,15 +264,10 @@ onMounted(() => {
     }
     clearExternalSubtitleTracks();
     fetchOpenSubtitles();
-    const enterFs = consumeEnterPlayerFullscreen();
-    if (enterFs)
-      await container.value?.requestFullscreen?.().catch(() => {});
-    try {
-      await el.play();
-    }
-    catch {
+    await ensureEnterPlayerFullscreenIfNeeded();
+    const didPlay = await safePlay(el);
+    if (!didPlay)
       needsManualPlay.value = true;
-    }
   }, { once: true });
 });
 
@@ -256,19 +279,12 @@ watch(() => props.src, (newSrc) => {
   internalSrc.value = newSrc ?? null;
   clearExternalSubtitleTracks();
 
-  const enterFsNow = consumeEnterPlayerFullscreen();
-  if (enterFsNow)
-    container.value?.requestFullscreen?.().catch(() => {});
+  // maybe transfer fullscreen to the player container if navigation
+  // carried that intent (don't await here — non-blocking)
+  void ensureEnterPlayerFullscreenIfNeeded();
 
   const wasPlaying = isPlaying.value;
-  currentTime.value = 0;
-  duration.value = 0;
-  needsManualPlay.value = false;
-
-  if (currentBlobUrl) {
-    URL.revokeObjectURL(currentBlobUrl);
-    currentBlobUrl = null;
-  }
+  resetPlaybackState();
 
   if (player.value) {
     player.value.pause();
@@ -316,6 +332,7 @@ watch(() => props.streamId, (id) => {
       seriesId: props.seriesId,
       seasonNumber: props.seasonNumber,
       episodeNumber: props.episodeNumber,
+      containerExtension: props.containerExtension,
     });
   }
 

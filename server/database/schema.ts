@@ -71,6 +71,7 @@ export const watchHistory = pgTable("watch_history", {
   seriesId: integer("series_id"),
   seasonNumber: varchar("season_number", { length: 10 }),
   episodeNumber: integer("episode_number"),
+  containerExtension: varchar("container_extension", { length: 20 }),
   // Progress tracking
   currentTime: integer("current_time").notNull().default(0), // seconds
   duration: integer("duration").notNull().default(0), // seconds

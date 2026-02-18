@@ -14,6 +14,7 @@ export default defineEventHandler(async (event) => {
     seriesId?: number;
     seasonNumber?: string;
     episodeNumber?: number;
+    containerExtension?: string;
     currentTime: number;
     duration: number;
   }>(event);
@@ -44,6 +45,7 @@ export default defineEventHandler(async (event) => {
         seriesId: body.seriesId,
         seasonNumber: body.seasonNumber,
         episodeNumber: body.episodeNumber,
+        containerExtension: body.containerExtension,
         watchedAt: new Date(),
       })
       .where(eq(watchHistory.id, existing.id))
@@ -62,6 +64,7 @@ export default defineEventHandler(async (event) => {
       seriesId: body.seriesId,
       seasonNumber: body.seasonNumber,
       episodeNumber: body.episodeNumber,
+      containerExtension: body.containerExtension,
       currentTime: body.currentTime,
       duration: body.duration,
     })

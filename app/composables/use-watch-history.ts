@@ -11,6 +11,7 @@ export function useWatchHistory() {
     seriesId?: number;
     seasonNumber?: string;
     episodeNumber?: number;
+    containerExtension?: string;
   };
 
   const meta = ref<WatchMeta | null>(null);

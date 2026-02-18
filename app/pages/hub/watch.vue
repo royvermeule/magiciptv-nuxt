@@ -15,9 +15,10 @@ const seriesId = computed(() => route.query.seriesId ? Number(route.query.series
 const seriesNameQuery = computed(() => route.query.seriesName as string | undefined);
 const seasonNumber = computed(() => route.query.season as string | undefined);
 const episodeNumber = computed(() => route.query.episode ? Number(route.query.episode) : undefined);
+const streamExt = computed(() => route.query.ext as string | undefined);
 
 const { data: stream } = await useFetch("/api/xtream/stream-url", {
-  query: { type, id: streamId },
+  query: { type, id: streamId, ext: streamExt },
 });
 const { ensureExitOnRouteLeave } = useFullscreen();
 ensureExitOnRouteLeave();
@@ -73,7 +74,7 @@ watch(currentEpisodeIndex, async (idx) => {
   const prev = allEpisodes.value[idx - 1];
 
   if (next) {
-    const res = await $fetch("/api/xtream/stream-url", { query: { type: type.value, id: next.id } }).catch(() => null);
+    const res = await $fetch("/api/xtream/stream-url", { query: { type: type.value, id: next.id, ext: next.ext } }).catch(() => null);
     nextStreamUrl.value = res?.url ?? null;
   }
   else {
@@ -81,7 +82,7 @@ watch(currentEpisodeIndex, async (idx) => {
   }
 
   if (prev) {
-    const res = await $fetch("/api/xtream/stream-url", { query: { type: type.value, id: prev.id } }).catch(() => null);
+    const res = await $fetch("/api/xtream/stream-url", { query: { type: type.value, id: prev.id, ext: prev.ext } }).catch(() => null);
     prevStreamUrl.value = res?.url ?? null;
   }
   else {
@@ -166,6 +167,7 @@ function onPrevEpisode() {
         :series-id="seriesId"
         :season-number="seasonNumber"
         :episode-number="episodeNumber"
+        :container-extension="streamExt"
         :has-prev-episode="hasPrevEpisode"
         :has-next-episode="hasNextEpisode"
         @prev-episode="onPrevEpisode"
