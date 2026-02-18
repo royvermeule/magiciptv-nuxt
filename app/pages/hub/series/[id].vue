@@ -7,12 +7,8 @@ const seriesId = route.params.id as string;
 const seriesName = route.query.name as string ?? "";
 const seriesIcon = route.query.icon as string | undefined;
 
-const { data: seriesInfo, status } = useFetch<{
-  episodes: Record<string, { id: string; title: string; episode_num: number; container_extension: string }[]>;
-}>("/api/xtream/series/info", {
-  query: { seriesId },
-  lazy: true,
-});
+const { getSeriesInfo } = useIptvData();
+const seriesInfo = computed(() => getSeriesInfo(seriesId) ?? null);
 
 const { data: lastWatched, refresh: refreshLastWatched } = useFetch(`/api/watch-history/series/${seriesId}`, { lazy: true });
 
@@ -41,8 +37,6 @@ watch(seasons, (s) => {
 });
 
 const episodes = computed(() => seriesInfo.value?.episodes[selectedSeason.value] ?? []);
-
-// restore default navigation behavior for episodes (remove prefetch/play-intent)
 
 // Navigate to the watch page while registering a transient intent for
 // the player to enter fullscreen. We perform the navigation ourselves
@@ -82,12 +76,7 @@ function navigateToWatch(e: MouseEvent, query: Record<string, any>) {
       </h2>
     </div>
 
-    <!-- Loading -->
-    <div v-if="status === 'pending'" class="flex justify-center py-8">
-      <span class="loading loading-spinner loading-lg" />
-    </div>
-
-    <template v-else-if="seriesInfo">
+    <template v-if="seriesInfo">
       <!-- Continue watching -->
       <div v-if="lastWatched" class="mb-4">
         <h3 class="mb-2 text-sm font-semibold text-base-content/70">

@@ -31,11 +31,8 @@ type SeriesInfoResponse = {
 };
 
 const isSeries = type.value === "series" && !!seriesId.value;
-const { data: seriesInfo } = useFetch<SeriesInfoResponse>("/api/xtream/series/info", {
-  query: { seriesId },
-  lazy: true,
-  immediate: isSeries,
-});
+const { getSeriesInfo } = useIptvData();
+const seriesInfo = computed(() => (isSeries && seriesId.value ? getSeriesInfo(String(seriesId.value)) : null) ?? null);
 
 // Build a flat sorted list of all episodes across seasons
 const allEpisodes = computed(() => {

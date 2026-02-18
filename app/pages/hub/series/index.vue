@@ -1,65 +1,45 @@
 <script setup lang="ts">
-import type { Category, Stream } from "../../../../shared/types/stream.types";
-
 definePageMeta({ layout: "hub" });
 
-const { data: categories, status: categoriesStatus } = await useFetch<Category[]>("/api/xtream/series/categories");
-const { data: allStreams, status: streamsStatus } = useFetch<Stream[]>("/api/xtream/series/stream", { lazy: true });
+const { seriesCategories, seriesStreams } = useIptvData();
 
 const selectedCategoryId = ref<string | null>(null);
 
-watch(categories, (cats) => {
-  if (cats?.length && !selectedCategoryId.value) {
+watch(seriesCategories, (cats) => {
+  if (cats.length && !selectedCategoryId.value) {
     selectedCategoryId.value = cats[0]?.category_id ?? null;
   }
 }, { immediate: true });
 
 const streams = computed(() => {
-  if (!allStreams.value) {
-    return [];
-  }
-  if (!selectedCategoryId.value) {
-    return allStreams.value;
-  }
-  return allStreams.value.filter(s => s.category_id === selectedCategoryId.value);
+  if (!selectedCategoryId.value)
+    return seriesStreams.value;
+  return seriesStreams.value.filter(s => s.category_id === selectedCategoryId.value);
 });
 
 const searchQuery = ref("");
 
-const filteredStreams = computed(() => {
-  if (!searchQuery.value) {
-    return streams.value;
-  }
-
+const isSearchingAllCategories = computed(() => {
+  if (!searchQuery.value)
+    return false;
   const term = searchQuery.value.toLowerCase();
-  const inCategory = streams.value.filter(s => s.name.toLowerCase().includes(term));
-
-  if (inCategory.length) {
-    return inCategory;
-  }
-
-  return allStreams.value?.filter(s => s.name.toLowerCase().includes(term)) ?? [];
+  return streams.value.filter(s => s.name.toLowerCase().includes(term)).length === 0;
 });
 
-const isSearchingAllCategories = computed(() => {
-  if (!searchQuery.value) {
-    return false;
-  }
+const filteredStreams = computed(() => {
+  if (!searchQuery.value)
+    return streams.value;
+
   const term = searchQuery.value.toLowerCase();
   const inCategory = streams.value.filter(s => s.name.toLowerCase().includes(term));
-  return inCategory.length === 0;
+
+  if (inCategory.length)
+    return inCategory;
+
+  return seriesStreams.value.filter(s => s.name.toLowerCase().includes(term));
 });
 
 const { paginatedItems, hasMore, loadMore, resetPage } = usePagination(filteredStreams);
-
-const { preload } = usePreload();
-
-watch(paginatedItems, (items) => {
-  for (const stream of items.slice(0, 10)) {
-    const id = stream.series_id ?? stream.stream_id;
-    preload(`/api/xtream/series/info?seriesId=${id}`);
-  }
-}, { once: true });
 
 function selectCategory(id: string) {
   selectedCategoryId.value = id;
@@ -72,27 +52,19 @@ watch(searchQuery, () => resetPage());
 
 <template>
   <div>
-    <div v-if="categoriesStatus === 'pending'" class="flex justify-center py-8">
-      <span class="loading loading-spinner loading-lg" />
-    </div>
-
-    <template v-else-if="categories?.length">
+    <template v-if="seriesCategories.length">
       <CategoryFilter
         v-model:search="searchQuery"
-        :categories="categories"
+        :categories="seriesCategories"
         :selected-id="selectedCategoryId"
         @select="selectCategory"
       />
 
-      <div v-if="streamsStatus === 'pending'" class="flex justify-center py-8">
-        <span class="loading loading-spinner loading-lg" />
-      </div>
+      <p v-if="isSearchingAllCategories" class="mb-3 text-sm opacity-60">
+        Showing results from all categories
+      </p>
 
-      <template v-else-if="filteredStreams.length">
-        <p v-if="isSearchingAllCategories" class="mb-3 text-sm opacity-60">
-          Showing results from all categories
-        </p>
-
+      <template v-if="filteredStreams.length">
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           <StreamCard
             v-for="stream in paginatedItems"

@@ -3,14 +3,19 @@ import type AppConfirmationModel from "~/components/app-confirmation-model.vue";
 
 const { logout } = useAuth();
 const sidebarOpen = ref(false);
-const { preload } = usePreload();
+const optionsOpen = ref(false);
+const initialized = ref(false);
 
-onMounted(() => {
+const { state: initState, initialize, reinitialize } = useHubInit();
+const { clearAllData } = useIptvData();
+const cache = useIptvCache();
+
+onMounted(async () => {
   if (window.matchMedia("(min-width: 1024px)").matches) {
     sidebarOpen.value = true;
   }
-  preload("/api/xtream/series/stream");
-  preload("/api/xtream/series/categories");
+  await initialize();
+  initialized.value = true;
 });
 
 const route = useRoute();
@@ -18,10 +23,23 @@ const route = useRoute();
 const { deselectProfile } = useProfiles();
 
 const switchModal = ref<InstanceType<typeof AppConfirmationModel> | null>(null);
+const reloadModal = ref<InstanceType<typeof AppConfirmationModel> | null>(null);
+const logoutModal = ref<InstanceType<typeof AppConfirmationModel> | null>(null);
 
 async function switchProfile() {
+  clearAllData();
+  await cache.clearAll();
   await deselectProfile();
   navigateTo("/");
+}
+
+async function reloadData() {
+  sidebarOpen.value = false;
+  clearAllData();
+  await cache.clearAll();
+  initialized.value = false;
+  await reinitialize();
+  initialized.value = true;
 }
 
 const pageTitle = computed(() => {
@@ -39,9 +57,19 @@ const pageTitle = computed(() => {
 
 <template>
   <div class="drawer">
+    <!-- Full-screen loader — always rendered so it can overlay the slot -->
+    <AppHubLoader
+      v-if="!initialized"
+      :current-step="initState.currentStep"
+      :progress="initState.progress"
+      :error="initState.error"
+      @retry="reinitialize().then(() => { initialized.value = true; })"
+    />
+
     <input v-model="sidebarOpen" type="checkbox" class="drawer-toggle">
     <div class="drawer-content flex min-h-screen flex-col">
-      <nav class="navbar bg-base-100 shadow-sm">
+      <!-- Navbar — only shown after init -->
+      <nav v-if="initialized" class="navbar bg-base-100 shadow-sm">
         <div class="flex-none">
           <button class="btn btn-square btn-ghost" @click="sidebarOpen = !sidebarOpen">
             <Icon name="tabler:menu-2" size="28" />
@@ -58,10 +86,13 @@ const pageTitle = computed(() => {
         </div>
       </nav>
 
+      <!-- Page content — always rendered so Nuxt can detect <NuxtPage /> -->
       <main class="flex-1 p-4 pb-16 lg:pb-4">
         <slot />
       </main>
-      <nav v-if="!sidebarOpen" class="fixed bottom-0 left-0 z-50 flex h-16 w-full bg-base-100 shadow-[0_-1px_6px_rgba(0,0,0,0.1)] lg:hidden">
+
+      <!-- Bottom nav — only shown after init -->
+      <nav v-if="initialized && !sidebarOpen" class="fixed bottom-0 left-0 z-50 flex h-16 w-full bg-base-100 shadow-[0_-1px_6px_rgba(0,0,0,0.1)] lg:hidden">
         <NuxtLink to="/hub/live" class="flex flex-1 items-center justify-center opacity-60" active-class="!text-primary !opacity-100">
           <Icon name="tabler:antenna" size="24" />
         </NuxtLink>
@@ -77,7 +108,8 @@ const pageTitle = computed(() => {
       </nav>
     </div>
 
-    <div class="drawer-side">
+    <!-- Sidebar — only shown after init -->
+    <div v-if="initialized" class="drawer-side">
       <div class="drawer-overlay" @click="sidebarOpen = false" />
       <aside class="menu bg-base-100 min-h-full w-64 p-4">
         <div class="mb-4 text-xl font-bold">
@@ -124,19 +156,56 @@ const pageTitle = computed(() => {
 
         <div class="mt-auto">
           <div class="divider" />
-          <button class="btn btn-ghost btn-sm w-full justify-start gap-2" @click="logout">
-            <Icon name="tabler:logout" class="size-5" />
-            Logout
+
+          <!-- Options toggle -->
+          <button class="btn btn-ghost btn-sm w-full justify-between gap-2" @click="optionsOpen = !optionsOpen">
+            <span class="flex items-center gap-2">
+              <Icon name="tabler:settings" class="size-5" />
+              Options
+            </span>
+            <Icon
+              name="tabler:chevron-down"
+              class="size-4 transition-transform"
+              :class="optionsOpen ? 'rotate-180' : ''"
+            />
           </button>
+
+          <!-- Options items -->
+          <ul v-if="optionsOpen" class="mt-1 space-y-1">
+            <li>
+              <button class="btn btn-ghost btn-sm w-full justify-start gap-2" @click="reloadModal?.open()">
+                <Icon name="tabler:refresh" class="size-5" />
+                Reload Live TV, Movies & Series
+              </button>
+            </li>
+            <li>
+              <button class="btn btn-ghost btn-sm w-full justify-start gap-2" @click="logoutModal?.open()">
+                <Icon name="tabler:logout" class="size-5" />
+                Logout
+              </button>
+            </li>
+          </ul>
         </div>
       </aside>
     </div>
+
     <AppConfirmationModel
       ref="switchModal"
       title="Switch Profile"
       message="Are you sure you want to switch profiles?"
-      confirm-text="Switch"
       @confirm="switchProfile"
+    />
+    <AppConfirmationModel
+      ref="reloadModal"
+      title="Reload Content"
+      message="This will reload all Live TV, Movies and Series. This can take a while. Do you wish to proceed?"
+      @confirm="reloadData"
+    />
+    <AppConfirmationModel
+      ref="logoutModal"
+      title="Logout"
+      message="Are you sure you want to logout?"
+      @confirm="logout"
     />
   </div>
 </template>
