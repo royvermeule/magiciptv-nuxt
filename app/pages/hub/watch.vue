@@ -31,8 +31,31 @@ type SeriesInfoResponse = {
 };
 
 const isSeries = type.value === "series" && !!seriesId.value;
-const { getSeriesInfo } = useIptvData();
+const { getSeriesInfo, setSeriesInfo } = useIptvData();
+const cache = useIptvCache();
 const seriesInfo = computed(() => (isSeries && seriesId.value ? getSeriesInfo(String(seriesId.value)) : null) ?? null);
+
+onMounted(async () => {
+  if (!isSeries || !seriesId.value)
+    return;
+  const sid = String(seriesId.value);
+  if (getSeriesInfo(sid))
+    return;
+
+  const cached = await cache.get<NonNullable<ReturnType<typeof getSeriesInfo>>>(`series-info-${sid}`);
+  if (cached) {
+    setSeriesInfo(sid, cached);
+    return;
+  }
+
+  const info = await $fetch<NonNullable<ReturnType<typeof getSeriesInfo>>>("/api/xtream/series/info", {
+    query: { seriesId: sid },
+  }).catch(() => null);
+  if (info) {
+    setSeriesInfo(sid, info);
+    await cache.set(`series-info-${sid}`, info);
+  }
+});
 
 // Build a flat sorted list of all episodes across seasons
 const allEpisodes = computed(() => {
@@ -106,16 +129,11 @@ function navigateToEpisode(ep: { season: string; id: string; title: string; ext:
   }, { replace: true });
 }
 
-async function onNextEpisode() {
+function onNextEpisode() {
   const idx = currentEpisodeIndex.value;
   if (idx < 0 || idx >= allEpisodes.value.length - 1) {
     return;
   }
-  // Delete current episode from watch history
-  await $fetch("/api/watch-history/by-stream", {
-    method: "DELETE",
-    query: { streamId: streamId.value, type: "series" },
-  }).catch(() => {});
   const next = allEpisodes.value[idx + 1];
   if (next) {
     navigateToEpisode(next);

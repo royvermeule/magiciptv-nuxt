@@ -60,13 +60,7 @@ const showSubtitles = computed(() => !isLive.value);
 const { startTracking, updateProgress, stopTracking, restoreProgress } = useWatchHistory();
 const { consumeEnterPlayerFullscreen } = usePlayerIntent();
 
-const subtitles = useSubtitles(player, {
-  type: props.type,
-  title: props.title,
-  seriesName: props.seriesName,
-  seasonNumber: props.seasonNumber,
-  episodeNumber: props.episodeNumber,
-});
+const subtitles = useSubtitles(player, props);
 const {
   subtitleTracks,
   activeSubtitleId,
@@ -197,7 +191,7 @@ function goPrevEpisode() {
 }
 
 function goNextEpisode() {
-  stopTracking(true);
+  stopTracking();
   if (props.hasNextEpisode && props.nextSrc && player.value) {
     setInternalSource(props.nextSrc);
   }
@@ -206,6 +200,55 @@ function goNextEpisode() {
 }
 
 // manualPlay/togglePlay provided by usePlayerActions
+
+// --- keyboard controls ---
+function handleKeydown(e: KeyboardEvent) {
+  const target = e.target as HTMLElement;
+  if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+    return;
+
+  switch (e.key) {
+    case " ":
+    case "Spacebar":
+      e.preventDefault();
+      togglePlay();
+      break;
+    case "ArrowLeft":
+      if (!showSeek.value)
+        return;
+      e.preventDefault();
+      seekBackward();
+      break;
+    case "ArrowRight":
+      if (!showSeek.value)
+        return;
+      e.preventDefault();
+      seekForward();
+      break;
+    case "ArrowUp": {
+      e.preventDefault();
+      const el = player.value;
+      if (el) {
+        el.volume = Math.min(1, el.volume + 0.1);
+        if (el.muted)
+          el.muted = false;
+      }
+      break;
+    }
+    case "ArrowDown": {
+      e.preventDefault();
+      const el = player.value;
+      if (el)
+        el.volume = Math.max(0, el.volume - 0.1);
+      break;
+    }
+    case "f":
+    case "F":
+      e.preventDefault();
+      void toggleFullscreen();
+      break;
+  }
+}
 
 // --- lifecycle ---
 function handlePlayerUpdate({ paused, currentTime: ct, duration: dur, volume: v, muted }: any) {
@@ -236,6 +279,7 @@ onMounted(() => {
   });
 
   document.addEventListener("fullscreenchange", onFullscreenChange);
+  document.addEventListener("keydown", handleKeydown);
   isFullscreen.value = !!document.fullscreenElement;
 
   if (props.streamId && !isLive.value) {
@@ -320,37 +364,51 @@ watch(() => props.src, (newSrc) => {
   }
 });
 
-watch(() => props.streamId, (id) => {
-  stopTracking();
-  if (id && !isLive.value) {
-    startTracking({
-      streamId: id,
-      type: props.type as "movie" | "series",
-      title: props.title ?? "",
-      icon: props.poster,
-      seriesName: props.seriesName,
-      seriesId: props.seriesId,
-      seasonNumber: props.seasonNumber,
-      episodeNumber: props.episodeNumber,
-      containerExtension: props.containerExtension,
-    });
-  }
-
-  clearExternalSubtitleTracks();
-  const el = player.value;
-  if (el) {
-    const existing = [...(el.textTracks ?? [])].filter((t: any) => t.kind === "subtitles" || t.kind === "captions");
-    const hasValid = existing.some((t: any) => {
-      const src = t.src || "";
-      const cues = t.cues;
-      return (typeof src === "string" && src.trim() !== "") || (cues && cues.length > 0);
-    });
-    if (!hasValid) {
-      fetchOpenSubtitles();
-      el.addEventListener("can-play", () => fetchOpenSubtitles(), { once: true });
+watch(
+  () => ({
+    streamId: props.streamId,
+    type: props.type,
+    title: props.title,
+    poster: props.poster,
+    seriesName: props.seriesName,
+    seriesId: props.seriesId,
+    seasonNumber: props.seasonNumber,
+    episodeNumber: props.episodeNumber,
+    containerExtension: props.containerExtension,
+  }),
+  (data) => {
+    stopTracking();
+    if (data.streamId && !isLive.value) {
+      startTracking({
+        streamId: data.streamId,
+        type: data.type as "movie" | "series",
+        title: data.title ?? "",
+        icon: data.poster,
+        seriesName: data.seriesName,
+        seriesId: data.seriesId,
+        seasonNumber: data.seasonNumber,
+        episodeNumber: data.episodeNumber,
+        containerExtension: data.containerExtension,
+      });
     }
-  }
-});
+
+    clearExternalSubtitleTracks();
+    const el = player.value;
+    if (el) {
+      const existing = [...(el.textTracks ?? [])].filter((t: any) => t.kind === "subtitles" || t.kind === "captions");
+      const hasValid = existing.some((t: any) => {
+        const src = t.src || "";
+        const cues = t.cues;
+        return (typeof src === "string" && src.trim() !== "") || (cues && cues.length > 0);
+      });
+      if (!hasValid) {
+        fetchOpenSubtitles();
+        el.addEventListener("can-play", () => fetchOpenSubtitles(), { once: true });
+      }
+    }
+  },
+  { deep: true },
+);
 
 onUnmounted(() => {
   stopTracking();
@@ -358,6 +416,7 @@ onUnmounted(() => {
   controls.dispose();
   disposeSubtitles();
   document.removeEventListener("fullscreenchange", onFullscreenChange);
+  document.removeEventListener("keydown", handleKeydown);
   if (document.fullscreenElement)
     document.exitFullscreen();
   if (currentBlobUrl) {

@@ -6,7 +6,7 @@ const sidebarOpen = ref(false);
 const optionsOpen = ref(false);
 const initialized = ref(false);
 
-const { state: initState, initialize, reinitialize } = useHubInit();
+const { state: initState, initialize, reinitialize, startBackgroundPrefetch, stopBackgroundPrefetch } = useHubInit();
 const { clearAllData } = useIptvData();
 const cache = useIptvCache();
 
@@ -16,9 +16,28 @@ onMounted(async () => {
   }
   await initialize();
   initialized.value = true;
+  // Delay start so the user has time to navigate before background fetching begins.
+  // 2 workers = low enough not to saturate the IPTV provider API.
+  setTimeout(() => startBackgroundPrefetch(2), 5000);
 });
 
 const route = useRoute();
+
+// Pause background prefetch while watching to avoid competing with stream requests.
+// Resume when the user navigates away from the watch page.
+let prefetchTimeout: ReturnType<typeof setTimeout> | null = null;
+watch(() => route.name, (name) => {
+  if (name === "hub-watch") {
+    if (prefetchTimeout !== null) {
+      clearTimeout(prefetchTimeout);
+      prefetchTimeout = null;
+    }
+    stopBackgroundPrefetch();
+  }
+  else if (initialized.value) {
+    prefetchTimeout = setTimeout(() => startBackgroundPrefetch(2), 3000);
+  }
+});
 
 const { deselectProfile } = useProfiles();
 
@@ -40,6 +59,7 @@ async function reloadData() {
   initialized.value = false;
   await reinitialize();
   initialized.value = true;
+  setTimeout(() => startBackgroundPrefetch(2), 5000);
 }
 
 const pageTitle = computed(() => {

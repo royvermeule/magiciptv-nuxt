@@ -3,26 +3,48 @@ import type AppConfirmationModel from "~/components/app-confirmation-model.vue";
 
 definePageMeta({ layout: "hub" });
 
-const { data: history, status, refresh } = useFetch("/api/watch-history", { server: false });
+const { data: history, status, refresh } = useFetch("/api/watch-history/grouped", { server: false });
 
 onMounted(() => {
   refresh();
 });
 
-const deleteModal = ref<InstanceType<typeof AppConfirmationModel> | null>(null);
-const pendingDeleteId = ref<number | null>(null);
+type PendingDelete
+  = | { kind: "series"; seriesId: number }
+    | { kind: "movie"; streamId: number };
 
-function confirmDelete(id: number) {
-  pendingDeleteId.value = id;
+const deleteModal = ref<InstanceType<typeof AppConfirmationModel> | null>(null);
+const pendingDelete = ref<PendingDelete | null>(null);
+
+function confirmDelete(item: { type: string; seriesId: number | null; streamId: number }) {
+  if (item.type === "series" && item.seriesId) {
+    pendingDelete.value = { kind: "series", seriesId: item.seriesId };
+  }
+  else {
+    pendingDelete.value = { kind: "movie", streamId: item.streamId };
+  }
   deleteModal.value?.open();
 }
 
 async function handleDelete() {
-  if (!pendingDeleteId.value) {
+  if (!pendingDelete.value) {
     return;
   }
-  await $fetch(`/api/watch-history/${pendingDeleteId.value}`, { method: "DELETE" });
-  pendingDeleteId.value = null;
+
+  if (pendingDelete.value.kind === "series") {
+    await $fetch("/api/watch-history/by-series", {
+      method: "DELETE",
+      query: { seriesId: pendingDelete.value.seriesId },
+    });
+  }
+  else {
+    await $fetch("/api/watch-history/by-stream", {
+      method: "DELETE",
+      query: { streamId: pendingDelete.value.streamId, type: "movie" },
+    });
+  }
+
+  pendingDelete.value = null;
   await refresh();
 }
 
@@ -33,15 +55,15 @@ function progressPercent(item: { currentTime: number; duration: number }) {
   return Math.min(100, Math.round((item.currentTime / item.duration) * 100));
 }
 
-function formatTime(seconds: number) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0) {
-    return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-  }
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
+// function formatTime(seconds: number) {
+//   const h = Math.floor(seconds / 3600);
+//   const m = Math.floor((seconds % 3600) / 60);
+//   const s = Math.floor(seconds % 60);
+//   if (h > 0) {
+//     return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+//   }
+//   return `${m}:${s.toString().padStart(2, "0")}`;
+// }
 
 function watchLink(item: { streamId: number; type: string; title: string; icon: string | null; seriesName: string | null; seriesId: number | null; seasonNumber: string | null; episodeNumber: number | null; containerExtension?: string | null }) {
   if (item.type === "series" && item.seriesId) {
@@ -126,79 +148,89 @@ function navigateToWatchFromHistory(e: MouseEvent, query: Record<string, any>) {
       </p>
     </div>
 
-    <!-- History list -->
-    <div v-else-if="history?.length" class="flex flex-col gap-2">
-      <NuxtLink
+    <!-- History grid -->
+    <div v-else-if="history?.length" class="grid auto-rows-max grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+      <div
         v-for="item in history"
         :key="item.id"
-        :to="watchLink(item)"
-        class="flex flex-wrap items-center gap-3 rounded-lg bg-base-100 p-3 transition-colors hover:bg-base-200 sm:flex-nowrap"
-        @click.prevent="navigateToWatchFromHistory($event, watchLink(item).query)"
+        class="group relative overflow-hidden rounded-lg bg-base-200"
       >
-        <!-- Thumbnail -->
-        <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded bg-base-200">
+        <!-- Poster/Thumbnail -->
+        <NuxtLink
+          :to="watchLink(item)"
+          class="block aspect-video w-full overflow-hidden bg-base-300 transition-transform duration-300 group-hover:scale-105"
+          @click.prevent="navigateToWatchFromHistory($event, watchLink(item).query)"
+        >
           <img
             v-if="item.icon"
             :src="item.icon"
-            :alt="item.title"
-            class="h-14 w-14 rounded object-contain"
+            :alt="item.seriesName ?? item.title"
+            class="h-full w-full object-cover"
           >
-          <Icon v-else :name="item.type === 'movie' ? 'tabler:movie' : 'tabler:device-tv'" size="28" class="text-base-content/30" />
-        </div>
+          <div v-else class="flex h-full w-full items-center justify-center">
+            <Icon :name="item.type === 'movie' ? 'tabler:movie' : 'tabler:device-tv'" size="48" class="text-base-content/20" />
+          </div>
+        </NuxtLink>
 
-        <!-- Info -->
-        <div class="min-w-0 flex-1">
-          <p class="truncate text-sm font-medium">
+        <!-- Info section -->
+        <div class="p-2.5">
+          <!-- Title -->
+          <p class="mb-1 line-clamp-2 text-xs font-semibold leading-tight">
             {{ item.seriesName ?? item.title }}
           </p>
-          <div class="mt-0.5 flex items-center gap-2 text-xs text-base-content/50">
-            <span class="badge badge-xs" :class="item.type === 'movie' ? 'badge-secondary' : 'badge-accent'">
-              {{ item.type }}
-            </span>
-            <span v-if="item.seasonNumber">S{{ item.seasonNumber }}E{{ item.episodeNumber }} - {{ item.title }}</span>
-            <span>{{ timeAgo(item.watchedAt) }}</span>
+
+          <!-- Episode info for series -->
+          <div v-if="item.type === 'series'" class="mb-1.5 text-[11px] text-base-content/60">
+            S{{ item.seasonNumber }}E{{ item.episodeNumber }}
+          </div>
+
+          <!-- Time ago -->
+          <div class="mb-2 text-[11px] text-base-content/50">
+            {{ timeAgo(item.watchedAt) }}
           </div>
 
           <!-- Progress bar -->
-          <div v-if="item.duration" class="mt-1.5 flex items-center gap-2">
-            <div class="h-1 flex-1 overflow-hidden rounded-full bg-base-300">
+          <div v-if="item.duration" class="mb-2 flex items-center gap-1.5">
+            <div class="h-0.5 flex-1 overflow-hidden rounded-full bg-base-300">
               <div
                 class="h-full rounded-full bg-primary"
                 :style="{ width: `${progressPercent(item)}%` }"
               />
             </div>
-            <span class="shrink-0 text-[15px] text-base-content/40">
-              {{ formatTime(item.currentTime) }} / {{ formatTime(item.duration) }}
+            <span class="shrink-0 text-[10px] text-base-content/40">
+              {{ Math.round(progressPercent(item)) }}%
             </span>
           </div>
-        </div>
 
-        <!-- Actions: on desktop sits inline, on mobile wraps to full-width bottom row -->
-        <div class="flex w-full items-center gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
-          <NuxtLink
-            v-if="item.type === 'series' && item.seriesId"
-            :to="`/hub/series/${item.seriesId}`"
-            class="btn btn-circle btn-ghost btn-sm text-base-content/30 hover:text-info"
-            title="All episodes"
-            @click.stop
-          >
-            <Icon name="tabler:list" size="22" />
-          </NuxtLink>
-          <button
-            class="btn btn-circle btn-ghost btn-sm text-base-content/30 hover:text-error"
-            @click.stop.prevent="confirmDelete(item.id)"
-          >
-            <Icon name="tabler:trash" size="22" />
-          </button>
-          <Icon name="tabler:player-play" size="25" class="text-base-content/30" />
+          <!-- Action buttons -->
+          <div class="flex gap-1.5">
+            <NuxtLink
+              v-if="item.type === 'series' && item.seriesId"
+              :to="`/hub/series/${item.seriesId}`"
+              class="btn btn-circle btn-ghost h-10 w-10 text-base-content/50 hover:text-info"
+              title="All episodes"
+              @click.stop
+            >
+              <Icon name="tabler:list" size="30" />
+            </NuxtLink>
+            <button
+              class="btn btn-circle btn-ghost h-10 w-10 text-base-content/50 hover:text-error"
+              title="Remove from history"
+              @click.stop.prevent="confirmDelete(item)"
+            >
+              <Icon name="tabler:trash" size="25" />
+            </button>
+          </div>
         </div>
-      </NuxtLink>
+      </div>
     </div>
 
     <AppConfirmationModel
       ref="deleteModal"
       title="Remove from history"
-      message="Are you sure you want to remove this from your watch history?"
+      :message="pendingDelete?.kind === 'series'
+        ? 'Remove all episodes of this series from your watch history?'
+        : 'Remove this movie from your watch history?'"
       @confirm="handleDelete"
     />
   </div>

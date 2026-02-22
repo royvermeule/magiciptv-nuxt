@@ -22,6 +22,7 @@ const state = reactive<InitState>({
 });
 
 let initPromise: Promise<void> | null = null;
+let prefetchController: AbortController | null = null;
 
 export function useHubInit() {
   const cache = useIptvCache();
@@ -30,8 +31,6 @@ export function useHubInit() {
   async function loadFromCache(): Promise<void> {
     state.currentStep = "Loading from cache...";
 
-    // All data is loaded with a minimal set of IndexedDB reads.
-    // Series info is stored as one combined entry to avoid 1000+ individual reads.
     const [
       liveCategories,
       liveStreams,
@@ -39,7 +38,6 @@ export function useHubInit() {
       movieStreams,
       seriesCategories,
       seriesStreams,
-      seriesInfoAll,
     ] = await Promise.all([
       cache.get<Category[]>("live-categories"),
       cache.get<Stream[]>("live-streams"),
@@ -47,7 +45,6 @@ export function useHubInit() {
       cache.get<Stream[]>("movie-streams"),
       cache.get<Category[]>("series-categories"),
       cache.get<Stream[]>("series-streams"),
-      cache.get<Record<string, SeriesInfo>>("series-info-all"),
     ]);
 
     if (liveCategories && liveStreams) {
@@ -58,10 +55,6 @@ export function useHubInit() {
     }
     if (seriesCategories && seriesStreams) {
       iptvData.setSeriesData(seriesCategories, seriesStreams);
-    }
-    if (seriesInfoAll) {
-      // Single assignment — one Vue reactive update instead of 1000+
-      iptvData.setAllSeriesInfo(seriesInfoAll);
     }
   }
 
@@ -85,43 +78,13 @@ export function useHubInit() {
       $fetch<Stream[]>("/api/xtream/series/stream"),
     ]);
 
-    // Step 3: Batch-fetch ALL series info (100 concurrent)
-    state.currentStep = "Loading series details...";
-
-    const seriesIds = seriesStreams.map(s => String(s.series_id ?? s.stream_id));
-
-    const seriesInfoResults = await batchFetch<string, SeriesInfo>({
-      items: seriesIds,
-      batchSize: 100,
-      fetcher: async (seriesId) => {
-        return $fetch<SeriesInfo>("/api/xtream/series/info", {
-          query: { seriesId },
-        });
-      },
-      onProgress: (current, total) => {
-        state.progress = { current, total };
-        state.currentStep = `Loading series details... ${current}/${total}`;
-      },
-      onError: (seriesId, error) => {
-        console.warn(`[hub-init] Failed to fetch series info for ${seriesId}:`, error);
-      },
-    });
-
-    // Build a plain object map from the results
-    const seriesInfoAll: Record<string, SeriesInfo> = {};
-    seriesInfoResults.forEach((info, seriesId) => {
-      seriesInfoAll[seriesId] = info;
-    });
-
-    // Step 4: Populate global state (single reactive update per type)
+    // Step 3: Populate global state
     iptvData.setLiveData(liveCategories, liveStreams);
     iptvData.setMovieData(movieCategories, movieStreams);
     iptvData.setSeriesData(seriesCategories, seriesStreams);
-    iptvData.setAllSeriesInfo(seriesInfoAll);
 
-    // Step 5: Cache everything — series info as ONE entry, not 1000+
+    // Step 4: Cache categories and streams
     state.currentStep = "Saving to cache...";
-    state.progress = null;
 
     await Promise.all([
       cache.set("live-categories", liveCategories),
@@ -130,10 +93,57 @@ export function useHubInit() {
       cache.set("movie-streams", movieStreams),
       cache.set("series-categories", seriesCategories),
       cache.set("series-streams", seriesStreams),
-      cache.set("series-info-all", seriesInfoAll),
     ]);
 
     await cache.markCacheValid();
+  }
+
+  // Silently prefetch all series info in the background after hub is shown.
+  // Uses N concurrent workers so results trickle in without blocking the UI.
+  // Already-cached entries are skipped, so this is cheap on repeat visits.
+  function startBackgroundPrefetch(concurrency = 10): void {
+    prefetchController?.abort();
+    prefetchController = new AbortController();
+    const { signal } = prefetchController;
+
+    const seriesIds = iptvData.seriesStreams.value.map(s => String(s.series_id ?? s.stream_id));
+    if (!seriesIds.length)
+      return;
+
+    let index = 0;
+
+    async function worker() {
+      while (index < seriesIds.length && !signal.aborted) {
+        const seriesId = seriesIds[index++];
+        if (!seriesId)
+          continue;
+
+        if (iptvData.getSeriesInfo(seriesId))
+          continue;
+
+        const cached = await cache.get<SeriesInfo>(`series-info-${seriesId}`);
+        if (signal.aborted)
+          return;
+        if (cached) {
+          iptvData.setSeriesInfo(seriesId, cached);
+          continue;
+        }
+
+        const info = await $fetch<SeriesInfo>("/api/xtream/series/info", {
+          query: { seriesId },
+          signal,
+        }).catch(() => null);
+        if (signal.aborted)
+          return;
+        if (info) {
+          iptvData.setSeriesInfo(seriesId, info);
+          await cache.set(`series-info-${seriesId}`, info);
+        }
+      }
+    }
+
+    // Fire and forget — N workers pull from the same ID queue
+    void Promise.all(Array.from({ length: concurrency }, () => worker()));
   }
 
   async function _initialize(): Promise<void> {
@@ -176,13 +186,22 @@ export function useHubInit() {
   }
 
   async function reinitialize(): Promise<void> {
+    prefetchController?.abort();
+    prefetchController = null;
     initPromise = null;
     await initialize();
+  }
+
+  function stopBackgroundPrefetch(): void {
+    prefetchController?.abort();
+    prefetchController = null;
   }
 
   return {
     state: readonly(state),
     initialize,
     reinitialize,
+    startBackgroundPrefetch,
+    stopBackgroundPrefetch,
   };
 }

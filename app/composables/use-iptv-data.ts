@@ -41,6 +41,10 @@ export function useIptvData() {
     seriesInfoMap.value = markRaw(map);
   }
 
+  function setSeriesInfo(id: string, info: SeriesInfo): void {
+    seriesInfoMap.value = markRaw({ ...seriesInfoMap.value, [id]: info });
+  }
+
   function getSeriesInfo(seriesId: string): SeriesInfo | undefined {
     return seriesInfoMap.value[seriesId];
   }
@@ -67,6 +71,7 @@ export function useIptvData() {
     setMovieData,
     setSeriesData,
     setAllSeriesInfo,
+    setSeriesInfo,
     getSeriesInfo,
     clearAllData,
   };
