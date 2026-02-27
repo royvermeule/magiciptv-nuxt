@@ -32,6 +32,7 @@ const container = ref<HTMLElement>();
 const isPlaying = ref(false);
 const isFullscreen = ref(false);
 const needsManualPlay = ref(false);
+const isBuffering = ref(true);
 let currentBlobUrl: string | null = null;
 let unsubscribe: (() => void) | undefined;
 
@@ -41,14 +42,9 @@ const proxiedSrc = computed(() => {
   const src = internalSrc.value;
   if (!src)
     return null;
-  // Live → HLS.js (uses fetch internally, needs CORS — stays proxied)
   if (props.type === "live") {
-    return { src, type: "application/x-mpegURL" };
+    return { src, type: "application/vnd.apple.mpegurl" };
   }
-  // Movies/series → native <video> element. Provide video/mp4 so Vidstack
-  // picks the native video provider immediately without a HEAD probe.
-  // The proxy issues a 302 redirect to the IPTV URL for GET requests,
-  // so the browser streams directly (no CORS enforcement on <video> src).
   return { src, type: "video/mp4" };
 });
 
@@ -154,6 +150,7 @@ function resetPlaybackState() {
   currentTime.value = 0;
   duration.value = 0;
   needsManualPlay.value = false;
+  isBuffering.value = true;
   if (currentBlobUrl) {
     URL.revokeObjectURL(currentBlobUrl);
     currentBlobUrl = null;
@@ -278,6 +275,20 @@ onMounted(() => {
     handlePlayerUpdate({ paused, currentTime: ct, duration: dur, volume: v, muted });
   });
 
+  // Configure HLS.js for reduced startup buffering on live streams
+  const video = el.querySelector("video");
+  if (video && (window as any).Hls?.Events) {
+    const onHlsCreated = (hls: any) => {
+      if (hls && props.type === "live") {
+        // Reduce buffering goals for faster startup
+        hls.config.maxBufferLength = 8;
+        hls.config.bufferingGoal = 2;
+        hls.config.lowLevelPrecision = true;
+      }
+    };
+    video.addEventListener("hlsCreated", onHlsCreated);
+  }
+
   document.addEventListener("fullscreenchange", onFullscreenChange);
   document.addEventListener("keydown", handleKeydown);
   isFullscreen.value = !!document.fullscreenElement;
@@ -313,6 +324,11 @@ onMounted(() => {
     if (!didPlay)
       needsManualPlay.value = true;
   }, { once: true });
+
+  // Hide loading spinner only when actual playback starts (not just when ready)
+  el.addEventListener("playing", () => {
+    isBuffering.value = false;
+  }, { once: true });
 });
 
 watch(() => props.src, (newSrc) => {
@@ -322,6 +338,7 @@ watch(() => props.src, (newSrc) => {
 
   internalSrc.value = newSrc ?? null;
   clearExternalSubtitleTracks();
+  isBuffering.value = true;
 
   // maybe transfer fullscreen to the player container if navigation
   // carried that intent (don't await here — non-blocking)
@@ -343,6 +360,10 @@ watch(() => props.src, (newSrc) => {
       fetchOpenSubtitles();
     }, { once: true });
 
+    player.value.addEventListener("playing", () => {
+      isBuffering.value = false;
+    }, { once: true });
+
     Promise.resolve().then(() => {
       const existing = [...(player.value?.textTracks ?? [])].filter((t: any) => t.kind === "subtitles" || t.kind === "captions");
       if (existing.length === 0)
@@ -358,6 +379,10 @@ watch(() => props.src, (newSrc) => {
           catch {
             needsManualPlay.value = true;
           }
+        }, { once: true });
+
+        player.value?.addEventListener("playing", () => {
+          isBuffering.value = false;
         }, { once: true });
       });
     }
@@ -436,12 +461,26 @@ onUnmounted(() => {
     <media-player
       ref="player"
       class="player"
-      :src="proxiedSrc"
       :title="title"
       playsinline
     >
-      <media-provider />
+      <media-provider v-if="proxiedSrc">
+        <source :src="(proxiedSrc as any).src" :type="(proxiedSrc as any).type">
+      </media-provider>
     </media-player>
+
+    <!-- Loading spinner overlay (shown while buffering) -->
+    <div
+      v-if="isBuffering"
+      class="absolute inset-0 z-30 flex items-center justify-center bg-black/60"
+    >
+      <div class="flex flex-col items-center gap-3">
+        <div class="flex size-20 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm">
+          <Icon name="tabler:loader" size="40" class="animate-spin text-white" />
+        </div>
+        <span class="text-sm text-white/80">Loading...</span>
+      </div>
+    </div>
 
     <!-- Manual play overlay (shown when autoplay is blocked) -->
     <div

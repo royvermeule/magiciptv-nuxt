@@ -83,7 +83,7 @@ const pageTitle = computed(() => {
       :current-step="initState.currentStep"
       :progress="initState.progress"
       :error="initState.error"
-      @retry="reinitialize().then(() => { initialized.value = true; })"
+      @retry="reinitialize().then(() => { initialized = true; })"
     />
 
     <input v-model="sidebarOpen" type="checkbox" class="drawer-toggle">
