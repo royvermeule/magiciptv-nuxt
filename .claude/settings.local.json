@@ -8,7 +8,9 @@
       "Bash(pnpm add:*)",
       "Bash(findstr:*)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(pnpm list:*)"
+      "Bash(pnpm list:*)",
+      "Bash(npx eslint:*)",
+      "Bash(pnpm run build)"
     ]
   }
 }

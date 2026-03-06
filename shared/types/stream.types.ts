@@ -11,4 +11,5 @@ export type Stream = {
   stream_icon: string;
   cover?: string;
   category_id: string;
+  container_extension?: string;
 };

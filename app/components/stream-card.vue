@@ -5,6 +5,7 @@ const props = defineProps<{
   icon?: string;
   type: "live" | "movie" | "series";
   fallbackIcon?: string;
+  ext?: string;
 }>();
 
 const { favorites, isFavorited, toggleFavorite, folders, addToFolder, getFavoriteFolderId, moveToFolder } = useFavorites();
@@ -19,8 +20,38 @@ const linkTo = computed(() => {
   if (props.type === "series") {
     return { path: `/hub/series/${props.streamId}`, query: { name: props.name, icon: props.icon } };
   }
-  return { path: "/hub/watch", query: { type: props.type, id: props.streamId, name: props.name, icon: props.icon } };
+  return { path: "/hub/watch", query: { type: props.type, id: props.streamId, name: props.name, icon: props.icon, ...(props.ext && { ext: props.ext }) } };
 });
+
+// ...existing code...
+// (pointerdown prefetch/play-intent removed — restore simple navigation)
+
+const { requestEnterPlayerFullscreen } = usePlayerIntent();
+
+function handleNavigateToLink(e: MouseEvent) {
+  // respect modifier / non-left clicks by delegating to the browser
+  if (e.button !== 0)
+    return;
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+    const href = (e.currentTarget as HTMLAnchorElement)?.href;
+    if (href)
+      window.open(href, "_blank");
+    return;
+  }
+
+  // mark intent for the player and perform programmatic SPA navigation
+  if (linkTo.value?.path === "/hub/watch") {
+    requestEnterPlayerFullscreen();
+    try {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    }
+    catch {
+      /* ignore */
+    }
+  }
+
+  navigateTo(linkTo.value as any);
+}
 
 async function handleFolderClick(folderId: number) {
   const currentFolderId = getFavoriteFolderId(props.streamId, props.type);
@@ -43,6 +74,7 @@ async function handleFolderClick(folderId: number) {
   <NuxtLink
     :to="linkTo"
     class="group card bg-base-100 cursor-pointer overflow-visible shadow-sm transition-shadow hover:shadow-md"
+    @click.prevent="handleNavigateToLink"
   >
     <figure class="bg-base-200 relative overflow-visible px-4 pt-4">
       <img

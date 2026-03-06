@@ -5,7 +5,7 @@ import { jwtVerify, SignJWT } from "jose";
 
 const SALT_ROUNDS = 10;
 const ACCESS_TOKEN_MAX_AGE = 15 * 60;
-const REFRESH_TOKEN_MAX_AGE = 7 * 24 * 60 * 60;
+const REFRESH_TOKEN_MAX_AGE = 30 * 24 * 60 * 60;
 
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, SALT_ROUNDS);

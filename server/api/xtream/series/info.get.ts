@@ -1,18 +1,8 @@
-const cache = new Map<string, { data: unknown; expires: number }>();
-
 export default defineEventHandler(async (event) => {
   const { seriesId } = getQuery<{ seriesId: string }>(event);
 
   if (!seriesId) {
     throw createError({ statusCode: 400, statusMessage: "seriesId is required" });
-  }
-
-  const profileId = getCookie(event, "profile_id");
-  const cacheKey = `series-info-${profileId}-${seriesId}`;
-  const cached = cache.get(cacheKey);
-
-  if (cached && cached.expires > Date.now()) {
-    return cached.data;
   }
 
   const { xtreamUsername, xtreamPassword, xtreamUrl } = await getXtreamCredentials(event);
@@ -37,8 +27,5 @@ export default defineEventHandler(async (event) => {
     }));
   }
 
-  const data = { episodes };
-  cache.set(cacheKey, { data, expires: Date.now() + 86_400_000 });
-
-  return data;
+  return { episodes };
 });

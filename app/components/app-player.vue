@@ -1,118 +1,110 @@
 <script setup lang="ts">
-import type { MediaProviderChangeEvent, TextTrack } from "vidstack";
 import type { MediaPlayerElement } from "vidstack/elements";
 
-import { isHLSProvider } from "vidstack";
 import "vidstack/player";
 import "vidstack/player/styles/default/theme.css";
 
 const props = defineProps<{
-  src: string;
+  src?: string | null;
   title?: string;
   poster?: string;
   type?: "live" | "movie" | "series";
+  streamId?: number;
+  seriesName?: string;
+  seriesId?: number;
+  seasonNumber?: string;
+  episodeNumber?: number;
+  containerExtension?: string;
+  hasPrevEpisode?: boolean;
+  hasNextEpisode?: boolean;
+  nextSrc?: string | null;
+  prevSrc?: string | null;
+}>();
+
+const emit = defineEmits<{
+  prevEpisode: [];
+  nextEpisode: [];
 }>();
 
 const router = useRouter();
 const player = ref<MediaPlayerElement>();
 const container = ref<HTMLElement>();
 const isPlaying = ref(false);
-const currentTime = ref(0);
-const duration = ref(0);
-const controlsVisible = ref(true);
 const isFullscreen = ref(false);
-const volume = ref(1);
-const isMuted = ref(false);
-
-let hideTimer: ReturnType<typeof setTimeout>;
+const needsManualPlay = ref(false);
+const isBuffering = ref(true);
+let currentBlobUrl: string | null = null;
 let unsubscribe: (() => void) | undefined;
+
+const internalSrc = ref<string | null>(props.src ?? null);
+
+const proxiedSrc = computed(() => {
+  const src = internalSrc.value;
+  if (!src)
+    return null;
+  if (props.type === "live") {
+    return { src, type: "application/vnd.apple.mpegurl" };
+  }
+  return { src, type: "video/mp4" };
+});
 
 const showSeek = computed(() => props.type === "movie" || props.type === "series");
 const isLive = computed(() => props.type === "live");
+const showSubtitles = computed(() => !isLive.value);
 
-function onProviderChange(event: MediaProviderChangeEvent) {
-  const provider = event.detail;
-  if (isHLSProvider(provider)) {
-    provider.config = {};
-  }
+// --- composables ---
+const { startTracking, updateProgress, stopTracking, restoreProgress } = useWatchHistory();
+const { consumeEnterPlayerFullscreen } = usePlayerIntent();
+
+const subtitles = useSubtitles(player, props);
+const {
+  subtitleTracks,
+  activeSubtitleId,
+  subtitleMenuOpen,
+  activeCueText,
+  clearExternalSubtitleTracks,
+  fetchOpenSubtitles,
+  setupTrackListeners,
+  dispose: disposeSubtitles,
+} = subtitles;
+
+const controls = usePlayerControls(isPlaying, () => {
+  subtitleMenuOpen.value = false;
+});
+const { controlsVisible, showControlsTemporarily, hideControls, resetHideTimer } = controls;
+
+const seek = useSeek(player, resetHideTimer);
+const { currentTime, duration, displayTime, progress, onSeekStart, onSeekInput, seekBackward, seekForward, formatTime, setTime } = seek;
+const onSeekEnd = seek.onSeekEnd;
+
+const vol = useVolume(player, resetHideTimer);
+const { volume, isMuted, volumeIcon, volumeProgress, toggleMute, onVolumeInput, setVolumeState } = vol;
+// ensure video element is sized correctly and kept in sync when providers change
+useVideoFit(player);
+const { manualPlay, togglePlay } = usePlayerActions(player, container, isFullscreen, needsManualPlay, resetHideTimer);
+
+// Thin wrappers for subtitle actions that also reset the hide timer
+function toggleSubtitleMenu() {
+  subtitles.toggleSubtitleMenu();
+  resetHideTimer();
 }
 
+function selectSubtitle(id: string | null) {
+  subtitles.selectSubtitle(id);
+  resetHideTimer();
+}
+
+// --- fullscreen ---
 function onFullscreenChange() {
   isFullscreen.value = !!document.fullscreenElement;
-}
-
-function goBack() {
-  if (document.fullscreenElement) {
-    document.exitFullscreen().catch(() => {
-      isFullscreen.value = false;
-    });
-  }
-  router.back();
-}
-
-onMounted(() => {
-  const el = player.value;
-  if (!el)
-    return;
-
-  unsubscribe = el.subscribe(({ paused, currentTime: ct, duration: dur, volume: vol, muted }) => {
-    isPlaying.value = !paused;
-    currentTime.value = ct;
-    duration.value = dur;
-    volume.value = vol;
-    isMuted.value = muted;
-  });
-
-  document.addEventListener("fullscreenchange", onFullscreenChange);
-
-  // Listen for subtitle track changes
-  el.textTracks.addEventListener("add", () => refreshSubtitleTracks());
-  el.textTracks.addEventListener("remove", () => refreshSubtitleTracks());
-
-  // Auto-play and auto-fullscreen
-  el.addEventListener("can-play", () => {
-    el.play();
-    container.value?.requestFullscreen().catch(() => {
-      isFullscreen.value = true;
-    });
-  }, { once: true });
-});
-
-onUnmounted(() => {
-  unsubscribe?.();
-  clearTimeout(hideTimer);
-  document.removeEventListener("fullscreenchange", onFullscreenChange);
-});
-
-function seekBackward() {
-  if (player.value)
-    player.value.currentTime = Math.max(0, player.value.currentTime - 10);
-  resetHideTimer();
-}
-
-function seekForward() {
-  if (player.value)
-    player.value.currentTime += 10;
-  resetHideTimer();
-}
-
-function togglePlay() {
-  if (!player.value)
-    return;
-  if (player.value.paused)
-    player.value.play();
-  else player.value.pause();
-  resetHideTimer();
 }
 
 async function toggleFullscreen() {
   const el = container.value;
   if (!el)
     return;
-
   if (!document.fullscreenElement) {
     await el.requestFullscreen().catch(() => {
-      // Fallback to CSS fullscreen if API not supported
       isFullscreen.value = true;
     });
   }
@@ -124,178 +116,339 @@ async function toggleFullscreen() {
   resetHideTimer();
 }
 
-// Volume controls
-const volumeIcon = computed(() => {
-  if (isMuted.value || volume.value === 0) {
-    return "tabler:volume-off";
+// --- navigation ---
+async function goBack() {
+  if (document.fullscreenElement) {
+    await document.exitFullscreen?.().catch(() => (document as any).webkitExitFullscreen?.());
+    const { exit } = useFullscreen();
+    await exit(500);
+    isFullscreen.value = !!document.fullscreenElement;
   }
-  if (volume.value < 0.5) {
-    return "tabler:volume-2";
+  router.back();
+}
+
+// Shared helper to switch the internal source and perform the
+// common reset/play work that prev/next and other navigations use.
+function setInternalSource(src: string | null, autoplay = true) {
+  clearExternalSubtitleTracks();
+  internalSrc.value = src;
+  resetPlaybackState();
+
+  if (!player.value)
+    return;
+
+  player.value.pause();
+  player.value.currentTime = 0;
+
+  if (autoplay) {
+    void safePlay(player.value);
+    player.value.addEventListener("can-play", () => void safePlay(player.value), { once: true });
   }
-  return "tabler:volume";
+}
+
+function resetPlaybackState() {
+  currentTime.value = 0;
+  duration.value = 0;
+  needsManualPlay.value = false;
+  isBuffering.value = true;
+  if (currentBlobUrl) {
+    URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = null;
+  }
+}
+
+// attempt to play a player instance without throwing; returns true
+// when playback starts, false otherwise.
+async function safePlay(p?: MediaPlayerElement | null) {
+  const el = p ?? player.value;
+  if (!el)
+    return false;
+  try {
+    await el.play();
+    return true;
+  }
+  catch {
+    return false;
+  }
+}
+
+async function ensureEnterPlayerFullscreenIfNeeded() {
+  const enterFs = consumeEnterPlayerFullscreen();
+  if (enterFs)
+    await container.value?.requestFullscreen?.().catch(() => {});
+}
+
+function goPrevEpisode() {
+  stopTracking();
+  if (props.hasPrevEpisode && props.prevSrc && player.value) {
+    setInternalSource(props.prevSrc);
+  }
+  emit("prevEpisode");
+  resetHideTimer();
+}
+
+function goNextEpisode() {
+  stopTracking();
+  if (props.hasNextEpisode && props.nextSrc && player.value) {
+    setInternalSource(props.nextSrc);
+  }
+  emit("nextEpisode");
+  resetHideTimer();
+}
+
+// manualPlay/togglePlay provided by usePlayerActions
+
+// --- keyboard controls ---
+function handleKeydown(e: KeyboardEvent) {
+  const target = e.target as HTMLElement;
+  if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+    return;
+
+  switch (e.key) {
+    case " ":
+    case "Spacebar":
+      e.preventDefault();
+      togglePlay();
+      break;
+    case "ArrowLeft":
+      if (!showSeek.value)
+        return;
+      e.preventDefault();
+      seekBackward();
+      break;
+    case "ArrowRight":
+      if (!showSeek.value)
+        return;
+      e.preventDefault();
+      seekForward();
+      break;
+    case "ArrowUp": {
+      e.preventDefault();
+      const el = player.value;
+      if (el) {
+        el.volume = Math.min(1, el.volume + 0.1);
+        if (el.muted)
+          el.muted = false;
+      }
+      break;
+    }
+    case "ArrowDown": {
+      e.preventDefault();
+      const el = player.value;
+      if (el)
+        el.volume = Math.max(0, el.volume - 0.1);
+      break;
+    }
+    case "f":
+    case "F":
+      e.preventDefault();
+      void toggleFullscreen();
+      break;
+  }
+}
+
+// --- lifecycle ---
+function handlePlayerUpdate({ paused, currentTime: ct, duration: dur, volume: v, muted }: any) {
+  isPlaying.value = !paused;
+  setTime(ct, dur);
+  setVolumeState(v, muted);
+  updateProgress(ct, dur);
+  subtitles.onTimeUpdate(ct);
+}
+
+function onPlayerError(ev: Event) {
+  const v = player.value?.querySelector("video") as HTMLVideoElement | null;
+  // provider error — intentionally not logging in production
+  void ev;
+  void v?.error;
+  void props.src;
+}
+
+onMounted(() => {
+  const el = player.value;
+  if (!el)
+    return;
+
+  // video fit handled by useVideoFit(player)
+
+  unsubscribe = el.subscribe(({ paused, currentTime: ct, duration: dur, volume: v, muted }) => {
+    handlePlayerUpdate({ paused, currentTime: ct, duration: dur, volume: v, muted });
+  });
+
+  // Configure HLS.js for reduced startup buffering on live streams
+  const video = el.querySelector("video");
+  if (video && (window as any).Hls?.Events) {
+    const onHlsCreated = (hls: any) => {
+      if (hls && props.type === "live") {
+        // Reduce buffering goals for faster startup
+        hls.config.maxBufferLength = 8;
+        hls.config.bufferingGoal = 2;
+        hls.config.lowLevelPrecision = true;
+      }
+    };
+    video.addEventListener("hlsCreated", onHlsCreated);
+  }
+
+  document.addEventListener("fullscreenchange", onFullscreenChange);
+  document.addEventListener("keydown", handleKeydown);
+  isFullscreen.value = !!document.fullscreenElement;
+
+  if (props.streamId && !isLive.value) {
+    startTracking({
+      streamId: props.streamId,
+      type: props.type as "movie" | "series",
+      title: props.title ?? "",
+      icon: props.poster,
+      seriesName: props.seriesName,
+      seriesId: props.seriesId,
+      seasonNumber: props.seasonNumber,
+      episodeNumber: props.episodeNumber,
+      containerExtension: props.containerExtension,
+    });
+  }
+
+  setupTrackListeners();
+
+  el.addEventListener("error", onPlayerError);
+
+  el.addEventListener("can-play", async () => {
+    if (props.streamId && !isLive.value) {
+      const savedTime = await restoreProgress(props.streamId, props.type as "movie" | "series");
+      if (savedTime > 0)
+        el.currentTime = savedTime;
+    }
+    clearExternalSubtitleTracks();
+    fetchOpenSubtitles();
+    await ensureEnterPlayerFullscreenIfNeeded();
+    const didPlay = await safePlay(el);
+    if (!didPlay)
+      needsManualPlay.value = true;
+  }, { once: true });
+
+  // Hide loading spinner only when actual playback starts (not just when ready)
+  el.addEventListener("playing", () => {
+    isBuffering.value = false;
+  }, { once: true });
 });
 
-const volumeProgress = computed(() => `${(isMuted.value ? 0 : volume.value) * 100}%`);
-
-function toggleMute() {
-  if (!player.value) {
+watch(() => props.src, (newSrc) => {
+  const v = player.value?.querySelector("video") as HTMLVideoElement | null;
+  if ((v?.currentSrc && newSrc && v.currentSrc === newSrc) || internalSrc.value === newSrc)
     return;
-  }
-  player.value.muted = !player.value.muted;
-  resetHideTimer();
-}
 
-function onVolumeInput(e: Event) {
-  if (!player.value) {
-    return;
-  }
-  const val = (e.target as HTMLInputElement).valueAsNumber;
-  player.value.volume = val;
-  if (val > 0 && player.value.muted) {
-    player.value.muted = false;
-  }
-  resetHideTimer();
-}
+  internalSrc.value = newSrc ?? null;
+  clearExternalSubtitleTracks();
+  isBuffering.value = true;
 
-// Subtitle controls
-type SubtitleTrack = {
-  id: string;
-  label: string;
-  language: string;
-  track: TextTrack;
-};
+  // maybe transfer fullscreen to the player container if navigation
+  // carried that intent (don't await here — non-blocking)
+  void ensureEnterPlayerFullscreenIfNeeded();
 
-const subtitleTracks = ref<SubtitleTrack[]>([]);
-const activeSubtitleId = ref<string | null>(null);
-const subtitleMenuOpen = ref(false);
-const showSubtitles = computed(() => !isLive.value);
+  const wasPlaying = isPlaying.value;
+  resetPlaybackState();
 
-function refreshSubtitleTracks() {
-  const el = player.value;
-  if (!el) {
-    return;
-  }
+  if (player.value) {
+    player.value.pause();
+    player.value.currentTime = 0;
 
-  const tracks: SubtitleTrack[] = [];
-  for (const track of el.textTracks) {
-    if (track.kind === "subtitles" || track.kind === "captions") {
-      tracks.push({
-        id: track.id || `${track.language}-${track.label}`,
-        label: track.label || track.language || "Unknown",
-        language: track.language || "",
-        track,
+    player.value.addEventListener("can-play", async () => {
+      if (props.streamId && !isLive.value) {
+        const savedTime = await restoreProgress(props.streamId, props.type as "movie" | "series");
+        if (savedTime > 0 && player.value)
+          player.value.currentTime = savedTime;
+      }
+      fetchOpenSubtitles();
+    }, { once: true });
+
+    player.value.addEventListener("playing", () => {
+      isBuffering.value = false;
+    }, { once: true });
+
+    Promise.resolve().then(() => {
+      const existing = [...(player.value?.textTracks ?? [])].filter((t: any) => t.kind === "subtitles" || t.kind === "captions");
+      if (existing.length === 0)
+        fetchOpenSubtitles();
+    });
+
+    if (wasPlaying) {
+      player.value.play().catch(() => {
+        player.value?.addEventListener("can-play", async () => {
+          try {
+            await player.value?.play();
+          }
+          catch {
+            needsManualPlay.value = true;
+          }
+        }, { once: true });
+
+        player.value?.addEventListener("playing", () => {
+          isBuffering.value = false;
+        }, { once: true });
       });
     }
   }
-  subtitleTracks.value = tracks;
-
-  const active = tracks.find(t => t.track.mode === "showing");
-  activeSubtitleId.value = active?.id ?? null;
-}
-
-function selectSubtitle(id: string | null) {
-  const el = player.value;
-  if (!el) {
-    return;
-  }
-
-  for (const track of el.textTracks) {
-    if (track.kind === "subtitles" || track.kind === "captions") {
-      track.mode = "disabled";
-    }
-  }
-
-  if (id) {
-    const selected = subtitleTracks.value.find(t => t.id === id);
-    if (selected) {
-      selected.track.mode = "showing";
-    }
-  }
-
-  activeSubtitleId.value = id;
-  subtitleMenuOpen.value = false;
-  resetHideTimer();
-}
-
-function toggleSubtitleMenu() {
-  subtitleMenuOpen.value = !subtitleMenuOpen.value;
-  if (subtitleMenuOpen.value) {
-    refreshSubtitleTracks();
-  }
-  resetHideTimer();
-}
-
-// Seek slider logic
-const isSeeking = ref(false);
-const seekValue = ref(0);
-const displayTime = computed(() => isSeeking.value ? seekValue.value : currentTime.value);
-const progress = computed(() => {
-  if (!duration.value)
-    return "0%";
-  return `${(displayTime.value / duration.value) * 100}%`;
 });
 
-function onSeekStart(e: Event) {
-  isSeeking.value = true;
-  seekValue.value = (e.target as HTMLInputElement).valueAsNumber;
-}
+watch(
+  () => ({
+    streamId: props.streamId,
+    type: props.type,
+    title: props.title,
+    poster: props.poster,
+    seriesName: props.seriesName,
+    seriesId: props.seriesId,
+    seasonNumber: props.seasonNumber,
+    episodeNumber: props.episodeNumber,
+    containerExtension: props.containerExtension,
+  }),
+  (data) => {
+    stopTracking();
+    if (data.streamId && !isLive.value) {
+      startTracking({
+        streamId: data.streamId,
+        type: data.type as "movie" | "series",
+        title: data.title ?? "",
+        icon: data.poster,
+        seriesName: data.seriesName,
+        seriesId: data.seriesId,
+        seasonNumber: data.seasonNumber,
+        episodeNumber: data.episodeNumber,
+        containerExtension: data.containerExtension,
+      });
+    }
 
-function onSeekInput(e: Event) {
-  seekValue.value = (e.target as HTMLInputElement).valueAsNumber;
-}
+    clearExternalSubtitleTracks();
+    const el = player.value;
+    if (el) {
+      const existing = [...(el.textTracks ?? [])].filter((t: any) => t.kind === "subtitles" || t.kind === "captions");
+      const hasValid = existing.some((t: any) => {
+        const src = t.src || "";
+        const cues = t.cues;
+        return (typeof src === "string" && src.trim() !== "") || (cues && cues.length > 0);
+      });
+      if (!hasValid) {
+        fetchOpenSubtitles();
+        el.addEventListener("can-play", () => fetchOpenSubtitles(), { once: true });
+      }
+    }
+  },
+  { deep: true },
+);
 
-function onSeekEnd() {
-  if (player.value)
-    player.value.currentTime = seekValue.value;
-  isSeeking.value = false;
-  resetHideTimer();
-}
-
-// Controls visibility
-let lastShownAt = 0;
-
-function showControlsTemporarily() {
-  controlsVisible.value = true;
-  lastShownAt = Date.now();
-  resetHideTimer();
-}
-
-function hideControls() {
-  // Ignore if controls were just shown (prevents the same touch from show+hide)
-  if (Date.now() - lastShownAt < 400)
-    return;
-  controlsVisible.value = false;
-  subtitleMenuOpen.value = false;
-  clearTimeout(hideTimer);
-}
-
-function resetHideTimer() {
-  clearTimeout(hideTimer);
-  if (isPlaying.value) {
-    hideTimer = setTimeout(() => {
-      controlsVisible.value = false;
-    }, 3000);
-  }
-}
-
-watch(isPlaying, (playing) => {
-  if (!playing) {
-    controlsVisible.value = true;
-    clearTimeout(hideTimer);
-  }
-  else {
-    resetHideTimer();
+onUnmounted(() => {
+  stopTracking();
+  unsubscribe?.();
+  controls.dispose();
+  disposeSubtitles();
+  document.removeEventListener("fullscreenchange", onFullscreenChange);
+  document.removeEventListener("keydown", handleKeydown);
+  if (document.fullscreenElement)
+    document.exitFullscreen();
+  if (currentBlobUrl) {
+    URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = null;
   }
 });
-
-function formatTime(seconds: number) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0)
-    return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
 </script>
 
 <template>
@@ -308,33 +461,55 @@ function formatTime(seconds: number) {
     <media-player
       ref="player"
       class="player"
-      :src="src"
       :title="title"
-      crossorigin
       playsinline
-      @provider-change="onProviderChange"
     >
-      <media-provider />
+      <media-provider v-if="proxiedSrc">
+        <source :src="(proxiedSrc as any).src" :type="(proxiedSrc as any).type">
+      </media-provider>
     </media-player>
 
-    <!--
-        Touch capture layer: ALWAYS interactive, promoted to its own
-        compositor layer so mobile browsers can't route touches to the
-        video hardware layer underneath.
-      -->
+    <!-- Loading spinner overlay (shown while buffering) -->
+    <div
+      v-if="isBuffering"
+      class="absolute inset-0 z-30 flex items-center justify-center bg-black/60"
+    >
+      <div class="flex flex-col items-center gap-3">
+        <div class="flex size-20 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm">
+          <Icon name="tabler:loader" size="40" class="animate-spin text-white" />
+        </div>
+        <span class="text-sm text-white/80">Loading...</span>
+      </div>
+    </div>
+
+    <!-- Manual play overlay (shown when autoplay is blocked) -->
+    <div
+      v-if="needsManualPlay"
+      class="absolute inset-0 z-30 flex cursor-pointer items-center justify-center bg-black/60"
+      @click="manualPlay"
+    >
+      <div class="flex flex-col items-center gap-3">
+        <div class="flex size-20 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm">
+          <Icon name="tabler:player-play-filled" size="40" class="text-white" />
+        </div>
+        <span class="text-sm text-white/80">Tap to play</span>
+      </div>
+    </div>
+
+    <!-- Subtitle overlay — above touch-capture (z-10), below controls (z-20) -->
+    <div v-if="activeCueText" class="subtitle-overlay" v-html="activeCueText" />
+
     <div
       class="touch-capture"
       @pointerdown="showControlsTemporarily"
       @pointermove="showControlsTemporarily"
     />
 
-    <!-- Controls overlay (above touch capture) -->
     <div
       class="controls-layer"
       :class="controlsVisible ? 'opacity-100' : 'pointer-events-none opacity-0'"
       @pointermove="showControlsTemporarily"
     >
-      <!-- Top bar — back button + title -->
       <div class="flex h-8 shrink-0 items-center gap-2 bg-linear-to-b from-black/50 to-transparent px-3 sm:h-16 sm:px-4" @click="hideControls">
         <button
           class="flex shrink-0 cursor-pointer items-center justify-center rounded-full p-1 text-white transition-colors hover:bg-white/20"
@@ -345,8 +520,15 @@ function formatTime(seconds: number) {
         <span v-if="title" class="truncate text-sm text-white sm:text-base" @click.stop>{{ title }}</span>
       </div>
 
-      <!-- Center — background click hides, buttons stop propagation -->
       <div class="flex flex-1 items-center justify-center gap-4 sm:gap-8" @click="hideControls">
+        <button
+          v-if="hasPrevEpisode"
+          class="flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-black/40 p-2 text-white transition-colors hover:bg-black/60 sm:p-3"
+          @click.stop="goPrevEpisode"
+        >
+          <Icon name="tabler:player-skip-back-filled" class="size-5 sm:size-6" />
+        </button>
+
         <button
           v-if="showSeek"
           class="flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-black/40 p-2 text-white transition-colors hover:bg-black/60 sm:p-3"
@@ -369,9 +551,16 @@ function formatTime(seconds: number) {
         >
           <Icon name="tabler:rewind-forward-10" class="size-6 sm:size-8" />
         </button>
+
+        <button
+          v-if="hasNextEpisode"
+          class="flex shrink-0 cursor-pointer items-center justify-center rounded-full bg-black/40 p-2 text-white transition-colors hover:bg-black/60 sm:p-3"
+          @click.stop="goNextEpisode"
+        >
+          <Icon name="tabler:player-skip-forward-filled" class="size-5 sm:size-6" />
+        </button>
       </div>
 
-      <!-- Bottom controls -->
       <div class="shrink-0 bg-linear-to-t from-black/60 to-transparent px-3 pb-1 pt-4 sm:px-4 sm:pb-3 sm:pt-8" @click.stop>
         <input
           v-if="!isLive"
@@ -416,7 +605,6 @@ function formatTime(seconds: number) {
           </div>
 
           <div class="flex items-center gap-1">
-            <!-- Subtitle button -->
             <div v-if="showSubtitles" class="relative">
               <button
                 class="rounded p-1 text-white transition-colors hover:bg-white/20"
@@ -426,10 +614,9 @@ function formatTime(seconds: number) {
                 <Icon name="tabler:message-language" size="20" />
               </button>
 
-              <!-- Subtitle menu -->
               <div
                 v-if="subtitleMenuOpen"
-                class="absolute bottom-full right-0 mb-2 min-w-40 rounded-lg bg-base-300/95 py-1 shadow-lg backdrop-blur-sm"
+                class="absolute bottom-full right-0 mb-2 max-h-60 min-w-40 overflow-y-auto rounded-lg bg-base-300/95 py-1 shadow-lg backdrop-blur-sm"
               >
                 <template v-if="subtitleTracks.length > 0">
                   <button
@@ -450,6 +637,7 @@ function formatTime(seconds: number) {
                     <Icon name="tabler:check" size="14" :class="activeSubtitleId === track.id ? 'opacity-100' : 'opacity-0'" />
                     {{ track.label }}
                   </button>
+                  <!-- subtitle sync controls removed: external subtitle files are authoritative -->
                 </template>
                 <span v-else class="block px-3 py-1.5 text-sm text-white/50">No subtitles available</span>
               </div>
@@ -491,8 +679,32 @@ function formatTime(seconds: number) {
   inset: 0;
   width: 100%;
   height: 100%;
-  z-index: 0;
   pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Custom subtitle overlay — above touch-capture (z-10), below controls (z-20) */
+.subtitle-overlay {
+  position: absolute;
+  bottom: 12%;
+  left: 5%;
+  right: 5%;
+  z-index: 15;
+  text-align: center;
+  color: white;
+  font-size: clamp(14px, 2.5vw, 22px);
+  line-height: 1.4;
+  text-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.9),
+    0 0 2px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 4px 12px;
+  border-radius: 4px;
+  width: fit-content;
+  margin: 0 auto;
 }
 
 /* Always-on touch capture: sits between video (z-0) and controls (z-20).

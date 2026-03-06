@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
   const accessToken = await generateAccessToken(user.id);
   const refreshToken = generateRefreshToken();
 
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
   await db.insert(refreshTokens).values({
     userId: user.id,
     token: refreshToken,

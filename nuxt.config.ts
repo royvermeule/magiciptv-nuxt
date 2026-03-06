@@ -30,5 +30,6 @@ export default defineNuxtConfig({
     smtpPort: "",
     smtpFrom: "",
     appUrl: "",
+    openSubtitlesApiKey: "",
   },
 });
